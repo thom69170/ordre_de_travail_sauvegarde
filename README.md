@@ -7,15 +7,23 @@ statistiques par semaine / mois / année.
 ## Utilisation
 
 1. Double-clique sur **`Lancer.bat`** à la racine du dossier.
-   - **Premier lancement** : il installe automatiquement tout ce qu'il faut (Python si besoin,
-     les dépendances, le moteur OCR Tesseract) dans `%LOCALAPPDATA%\OrdreDeTravail\runtime\` —
-     compte 1 à 2 minutes, connexion internet nécessaire. Rien de tout ça n'est mélangé avec un
-     Python que tu aurais déjà sur ta machine (environnement dédié à l'app, isolé).
+   - **Si Windows affiche "Contrôle intelligent des applications a bloqué un fichier
+     potentiellement dangereux"** : ça arrive quand le dossier vient d'un `.zip` téléchargé
+     (GitHub tague tous les fichiers extraits comme "venant d'internet"). Contrairement au
+     blocage de `OrdreDeTravail.exe` (voir [Note sur `OrdreDeTravail.exe`](#note-sur-ordredetravailexe)),
+     celui-ci se règle simplement et de façon fiable : ouvre PowerShell dans le dossier et lance
+     ```
+     Get-ChildItem -Recurse | Unblock-File
+     ```
+     (ou, fichier par fichier : clic droit sur `Lancer.bat` → Propriétés → coche **Débloquer**
+     en bas → OK ; à refaire pour `setup\bootstrap.ps1` et `setup\bootstrap_setup.py` si besoin).
+     Relance ensuite `Lancer.bat` normalement.
+   - **Premier lancement** (une fois débloqué) : installe automatiquement tout ce qu'il faut
+     (Python si besoin, les dépendances, le moteur OCR Tesseract) dans
+     `%LOCALAPPDATA%\OrdreDeTravail\runtime\` — compte 1 à 2 minutes, connexion internet
+     nécessaire. Rien de tout ça n'est mélangé avec un Python que tu aurais déjà sur ta machine
+     (environnement dédié à l'app, isolé).
    - **Lancements suivants** : instantané, tout est déjà en place.
-   - Comme ça ne repose que sur `Lancer.bat` + l'installateur officiel Python (signé par la
-     Python Software Foundation), le Contrôle intelligent des applications de Windows ne bloque
-     jamais rien ici — voir [Note sur `OrdreDeTravail.exe`](#note-sur-ordredetravailexe) pour
-     pourquoi l'exécutable fourni à part n'est, lui, pas fiable à 100 %.
 2. Onglet **Importer** : choisis une photo ou un PDF d'ordre de travail. L'app tente de lire
    automatiquement la date, le récapitulatif (TPS/TTE/Amplitude...) et les trajets effectués.
    **Vérifie toujours les valeurs pré-remplies en les comparant à l'aperçu de la photo affiché
