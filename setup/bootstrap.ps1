@@ -9,8 +9,13 @@ $AppDataDir = Join-Path $env:LOCALAPPDATA "OrdreDeTravail"
 $RuntimeDir = Join-Path $AppDataDir "runtime"
 $VenvDir = Join-Path $RuntimeDir "venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+# Ecrit uniquement quand TOUTES les etapes ci-dessous ont reussi : si une installation
+# precedente a ete interrompue (ex: bloquee par Windows, coupure reseau...), ce marqueur est
+# absent et on refait proprement l'installation au lieu de lancer l'app avec des dependances
+# manquantes.
+$MarkerFile = Join-Path $RuntimeDir "setup_complete.txt"
 
-if (Test-Path $VenvPython) {
+if ((Test-Path $VenvPython) -and (Test-Path $MarkerFile)) {
     Write-Host "Environnement deja pret : $VenvPython"
     exit 0
 }
@@ -101,5 +106,6 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Configuration du moteur OCR (Tesseract)..."
 & $VenvPython (Join-Path $PSScriptRoot "bootstrap_setup.py")
 
+Set-Content -Path $MarkerFile -Value (Get-Date -Format "o")
 Write-Host "Installation initiale terminee."
 exit 0
