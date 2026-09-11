@@ -1,0 +1,6 @@
+pypdfium2
+pillow
+pytesseract
+pyinstaller
+sv-ttk
+pywinstyles

@@ -1,0 +1,18 @@
+# Environnements / caches Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Artefacts de build lourds (générés localement, pas destinés à Git)
+build/
+dist/
+portable/
+vendor/
+*.spec
+
+# Certificat de signature local (clé privée : ne jamais publier)
+codesign/
+
+# Données utilisateur locales (au cas où l'app tournerait depuis ce dossier)
+*.db
