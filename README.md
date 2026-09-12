@@ -32,10 +32,16 @@ statistiques par semaine / mois / année.
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
+5. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
+   remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
+   l'onglet, avec le lien pour générer une clé gratuite. **Si tu configures une clé, tes photos
+   sont alors envoyées aux serveurs de Google pour être analysées** (l'onglet l'explique
+   clairement) ; sans clé, tout continue de fonctionner en local comme avant.
 
-Tes données (base + copies des photos/PDF importés) sont stockées dans :
-`%LOCALAPPDATA%\OrdreDeTravail\` (généralement `C:\Users\<toi>\AppData\Local\OrdreDeTravail\`).
-Rien n'est envoyé sur internet, tout reste sur ta machine.
+Tes données (base + copies des photos/PDF importés, et la clé Gemini si tu en configures une)
+sont stockées dans : `%LOCALAPPDATA%\OrdreDeTravail\` (généralement
+`C:\Users\<toi>\AppData\Local\OrdreDeTravail\`). Rien n'est envoyé sur internet par défaut ; ça
+change uniquement si tu configures toi-même une clé Gemini dans l'onglet Paramètres.
 
 ## Distribuer l'app à d'autres personnes
 
@@ -160,8 +166,12 @@ pas garanti à 100 % → `Lancer.bat` reste la méthode recommandée.
 - `app/db.py` — stockage SQLite (base `ordres.db`)
 - `app/ocr_engine.py` — rendu des PDF/photos en image + appel à Tesseract
 - `app/parser.py` — extraction (date, chauffeur, récapitulatif, trajets) depuis le texte OCR
+- `app/gemini_engine.py` — extraction équivalente via l'API Gemini (si une clé est configurée)
+- `app/extraction.py` — choisit Gemini ou Tesseract, avec repli automatique sur Tesseract
+- `app/config.py` — configuration locale (clé API Gemini)
 - `app/stats.py` — agrégations semaine/mois/année, classement des trajets
-- `app/ui/` — interface graphique (Tkinter) : onglets Importer / Historique / Statistiques
+- `app/ui/` — interface graphique (Tkinter) : onglets Importer / Historique / Statistiques /
+  Paramètres
 - `main.py` — point d'entrée
 - `setup/bootstrap.ps1` — installe Python (si besoin) + crée l'environnement virtuel de l'app,
   appelé automatiquement par `Lancer.bat` au premier lancement

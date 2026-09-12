@@ -11,7 +11,8 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from app import db, ocr_engine, parser, storage
+from app import config, db, ocr_engine, storage
+from app.extraction import extract_from_pages as run_extraction
 from app.models import SUMMARY_FIELDS, WorkOrder
 from app.ui.common import (
     ACCENT,
@@ -155,7 +156,7 @@ class ImportTab(ttk.Frame):
     def _maybe_show_ocr_banner(self):
         for child in self.banner_holder.winfo_children():
             child.destroy()
-        if ocr_engine.is_available():
+        if ocr_engine.is_available() or config.get_gemini_api_key():
             return
         bar = tk.Frame(self.banner_holder, bg=WARN_BG, padx=10, pady=8)
         bar.pack(fill="x")
@@ -211,9 +212,9 @@ class ImportTab(ttk.Frame):
             return
 
         extraction = None
-        if ocr_engine.is_available():
+        if ocr_engine.is_available() or config.get_gemini_api_key():
             try:
-                extraction = parser.extract_from_pages(pages)
+                extraction = run_extraction(pages)
             except Exception:  # noqa: BLE001
                 extraction = None
 
