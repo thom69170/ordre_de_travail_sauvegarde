@@ -1,6 +1,6 @@
 """Point d'entrée de l'application Ordres de travail.
 
-Lancé via pythonw.exe (sans console) par Lancer.bat : toute erreur doit donc être signalée par
+Lancé via pythonw.exe (sans console) par Ordres de travail.bat : toute erreur doit donc être signalée par
 une fenêtre de dialogue plutôt qu'un message dans un terminal que personne ne verrait.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ try:
 except Exception as exc:  # noqa: BLE001
     _fatal_error(
         f"Impossible de démarrer l'application :\n{exc}\n\n"
-        "Essaie de relancer Lancer.bat. Si le problème persiste, consulte le README du projet."
+        "Essaie de relancer Ordres de travail.bat. Si le problème persiste, consulte le README du projet."
     )
     sys.exit(1)
 

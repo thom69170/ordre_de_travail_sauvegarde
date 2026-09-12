@@ -6,7 +6,7 @@ statistiques par semaine / mois / année.
 
 ## Utilisation
 
-1. Double-clique sur **`Lancer.bat`** à la racine du dossier.
+1. Double-clique sur **`Ordres de travail.bat`** à la racine du dossier.
    - **Si Windows affiche "Contrôle intelligent des applications a bloqué un fichier
      potentiellement dangereux"** : ça arrive quand le dossier vient d'un `.zip` téléchargé
      (GitHub tague tous les fichiers extraits comme "venant d'internet"). Contrairement au
@@ -15,15 +15,18 @@ statistiques par semaine / mois / année.
      ```
      Get-ChildItem -Recurse | Unblock-File
      ```
-     (ou, fichier par fichier : clic droit sur `Lancer.bat` → Propriétés → coche **Débloquer**
+     (ou, fichier par fichier : clic droit sur `Ordres de travail.bat` → Propriétés → coche **Débloquer**
      en bas → OK ; à refaire pour `setup\bootstrap.ps1` et `setup\bootstrap_setup.py` si besoin).
-     Relance ensuite `Lancer.bat` normalement.
+     Relance ensuite `Ordres de travail.bat` normalement.
    - **Premier lancement** (une fois débloqué) : installe automatiquement tout ce qu'il faut
      (Python si besoin, les dépendances, le moteur OCR Tesseract) dans
      `%LOCALAPPDATA%\OrdreDeTravail\runtime\` — compte 1 à 2 minutes, connexion internet
      nécessaire. Rien de tout ça n'est mélangé avec un Python que tu aurais déjà sur ta machine
      (environnement dédié à l'app, isolé).
    - **Lancements suivants** : instantané, tout est déjà en place.
+   - Un `.bat` n'ayant pas d'icône propre, un raccourci **« Ordres de travail »** (avec l'icône
+     de l'app) est créé automatiquement à côté au premier lancement — épingle-le ou déplace-le
+     sur le Bureau si tu veux un accès plus pratique que le `.bat` lui-même.
 2. Onglet **Importer** : choisis une photo ou un PDF d'ordre de travail. L'app tente de lire
    automatiquement la date, le récapitulatif (TPS/TTE/Amplitude...) et les trajets effectués.
    **Vérifie toujours les valeurs pré-remplies en les comparant à l'aperçu de la photo affiché
@@ -66,26 +69,26 @@ Deux façons de partager l'app, selon ce qui compte le plus pour toi :
 
 ### Option A — Publier le code sur GitHub (léger, recommandé)
 
-C'est ce que permet le système `Lancer.bat` + `setup/` décrit ci-dessus : comme il télécharge
+C'est ce que permet le système `Ordres de travail.bat` + `setup/` décrit ci-dessus : comme il télécharge
 Python/les dépendances/Tesseract **au premier lancement plutôt que de les inclure**, le dépôt à
 publier ne contient que du code source (quelques centaines de Ko, aucun exécutable, aucun gros
 fichier binaire).
 
 **Fichiers à publier :** `app/`, `assets/icon.ico`, `setup/`, `main.py`, `requirements-app.txt`,
-`Lancer.bat`, `.gitignore`, ce README.
+`Ordres de travail.bat`, `.gitignore`, ce README.
 **À ne jamais publier :** `codesign/` (contient la clé privée du certificat), et les dossiers
 générés `build/`, `dist/`, `portable/`, `vendor/` — le `.gitignore` fourni les exclut déjà tous.
 
 ```
 git init
-git add app assets/icon.ico setup main.py requirements-app.txt Lancer.bat .gitignore README.md
+git add app assets/icon.ico setup main.py requirements-app.txt "Ordres de travail.bat" .gitignore README.md
 git commit -m "Version initiale"
 git remote add origin https://github.com/<toi>/<nom-du-depot>.git
 git push -u origin main
 ```
 
 Celui qui récupère le dépôt (`git clone` ou "Code → Download ZIP") double-clique juste sur
-`Lancer.bat` — tout s'installe tout seul au premier lancement (voir [Utilisation](#utilisation)
+`Ordres de travail.bat` — tout s'installe tout seul au premier lancement (voir [Utilisation](#utilisation)
 ci-dessus). Seul prérequis chez lui : une connexion internet la première fois.
 
 ### Option B — Partager un dossier tout-en-un (fonctionne hors ligne, plus lourd)
@@ -150,7 +153,7 @@ fonctionner sans rien installer d'autre.
 ## Note sur `OrdreDeTravail.exe`
 
 Ce fichier (dans `dist\OrdreDeTravail\`) est une troisième option, antérieure au système
-`Lancer.bat` + `setup/` décrit plus haut : un exécutable unique construit avec PyInstaller. Il
+`Ordres de travail.bat` + `setup/` décrit plus haut : un exécutable unique construit avec PyInstaller. Il
 reste dans le projet mais **n'est plus la méthode recommandée** : voir la limite ci-dessous.
 
 Windows 11 bloque par défaut tout exécutable non signé numériquement (Contrôle intelligent des
@@ -170,13 +173,13 @@ approuvé localement sur ce PC :
 
 Cette confiance ne s'applique qu'à ce compte Windows sur ce PC. Sur une autre machine (ou un
 autre compte), il faudrait soit ré-importer `OrdreDeTravail.cer` de la même façon, soit utiliser
-`Lancer.bat`.
+`Ordres de travail.bat`.
 
 **Limite constatée :** même signé par ce certificat désormais approuvé sur ce PC, un exe
 fraîchement reconstruit a quand même été bloqué par le Contrôle intelligent des applications lors
 d'un test. Un certificat auto-signé suffit pour la vérification de signature classique, mais pas
 forcément pour ce système, qui semble aussi consulter une réputation en ligne par fichier. Résultat
-pas garanti à 100 % → `Lancer.bat` reste la méthode recommandée.
+pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
 
 ## Structure du projet
 
@@ -193,7 +196,7 @@ pas garanti à 100 % → `Lancer.bat` reste la méthode recommandée.
   Paramètres
 - `main.py` — point d'entrée
 - `setup/bootstrap.ps1` — installe Python (si besoin) + crée l'environnement virtuel de l'app,
-  appelé automatiquement par `Lancer.bat` au premier lancement
+  appelé automatiquement par `Ordres de travail.bat` au premier lancement
 - `setup/bootstrap_setup.py` — installe/détecte Tesseract et télécharge les langues OCR
 - `requirements-app.txt` — dépendances minimales pour *faire tourner* l'app (utilisées par le
   bootstrap) ; `requirements.txt` couvre en plus les outils de développement (PyInstaller...)

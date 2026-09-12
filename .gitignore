@@ -16,3 +16,9 @@ codesign/
 
 # Données utilisateur locales (au cas où l'app tournerait depuis ce dossier)
 *.db
+
+# Raccourci généré automatiquement au premier lancement (propre à chaque installation)
+*.lnk
+
+# Documents générés (pas du code source)
+*.pdf

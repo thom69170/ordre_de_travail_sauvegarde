@@ -32,7 +32,7 @@ TIMEOUT_SECONDS = 10
 # notamment pas à vendor/, portable/, dist/, codesign/ qui ne sont pas publiés).
 UPDATABLE_ENTRIES = [
     "app", "assets", "setup", "main.py", "requirements-app.txt", "requirements.txt",
-    "Lancer.bat", "README.md", ".gitignore",
+    "Ordres de travail.bat", "README.md", ".gitignore",
 ]
 
 
@@ -77,7 +77,7 @@ def pending_update_dir() -> Path:
 
 
 def download_and_stage_update() -> None:
-    """Télécharge l'archive du dépôt et la prépare dans un dossier d'attente ; Lancer.bat
+    """Télécharge l'archive du dépôt et la prépare dans un dossier d'attente ; Ordres de travail.bat
     l'applique (copie de fichiers) au prochain démarrage, une fois l'application fermée."""
     staging = pending_update_dir()
     if staging.exists():
@@ -117,12 +117,12 @@ def download_and_stage_update() -> None:
 
 
 def restart_application() -> None:
-    """Ferme l'application et relance Lancer.bat (qui appliquera la mise à jour en attente
+    """Ferme l'application et relance Ordres de travail.bat (qui appliquera la mise à jour en attente
     avant de redémarrer l'app)."""
     import os
     import subprocess
 
-    lancer_bat = base_dir() / "Lancer.bat"
+    lancer_bat = base_dir() / "Ordres de travail.bat"
     subprocess.Popen(
         ["cmd", "/c", str(lancer_bat)],
         cwd=str(base_dir()),

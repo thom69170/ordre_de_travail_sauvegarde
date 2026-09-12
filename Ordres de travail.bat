@@ -37,6 +37,13 @@ if not exist "%SETUP_MARKER%" (
     )
 )
 
+rem Un .bat n'a pas d'icone propre (Windows utilise toujours l'icone generique des scripts) :
+rem cree un raccourci a cote, avec l'icone de l'app, la premiere fois (tu peux ensuite epingler
+rem ou deplacer ce raccourci sur le Bureau au lieu du .bat lui-meme).
+if not exist "%~dp0Ordres de travail.lnk" (
+    powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%~dp0Ordres de travail.lnk'); $s.TargetPath='%~dp0Ordres de travail.bat'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%~dp0assets\icon.ico'; $s.Save()" >nul 2>&1
+)
+
 rem Lance l'app sans console (pythonw) et en tache detachee (start) pour que cette
 rem fenetre se ferme aussitot au lieu de rester affichee tant que l'app tourne.
 start "" "%RUNTIME_PYW%" "%~dp0main.py"
