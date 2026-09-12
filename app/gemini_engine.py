@@ -14,6 +14,7 @@ import urllib.request
 
 from PIL import Image
 
+from app import ocr_engine
 from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES
 
 MODEL_NAME = "gemini-3.5-flash-lite"
@@ -30,6 +31,13 @@ d'heure, ex "7,47" = 7.47) : Date, TPS, TAD, Autres Temps, TTE, HLR 50% HI, HLR 
 (Ampli), Amp<12 HI25%, Amp 12-13 HI75%, Amp>13 HI100%, RCN 21h-6h, Repas P, Primes P,
 Dim.Travail P, Férié P, TPS OC P. Ces dernières colonnes (Repas/Primes/Dim.Travail/Férié/TPS OC)
 sont très souvent vides : mets alors 0.
+
+Ce tableau récapitulatif est la partie la plus importante et la plus difficile à lire (petits
+chiffres, une seule ligne de données). Si une dernière image légendée "Agrandissement du tableau
+récapitulatif" est fournie, sers-t'en en priorité pour lire précisément chaque chiffre (elle montre
+en gros l'en-tête des colonnes juste au-dessus de la ligne de valeurs) ; sinon base-toi sur les
+pages complètes. Lis chaque chiffre un par un avant de répondre, ne devine pas à partir d'une
+impression générale.
 
 Réponds uniquement avec les champs demandés par le schéma :
 - date au format ISO AAAA-MM-JJ
@@ -68,10 +76,37 @@ class GeminiError(Exception):
     pass
 
 
-def _image_to_jpeg_b64(image: Image.Image) -> str:
+def _image_to_png_b64(image: Image.Image) -> str:
+    # PNG (sans perte) plutôt que JPEG : évite les artefacts de compression qui rendent les
+    # petits chiffres du tableau récapitulatif encore plus difficiles à lire.
     buffer = io.BytesIO()
-    image.convert("RGB").save(buffer, format="JPEG", quality=85)
+    image.convert("RGB").save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def _locate_summary_zoom(pages: list[Image.Image]) -> Image.Image | None:
+    """Retrouve et agrandit le tableau récapitulatif (en-tête + ligne de données) pour aider
+    Gemini à lire précisément les petits chiffres. S'appuie sur l'OCR local (Tesseract) pour
+    localiser la zone : un pourcentage fixe serait trop peu fiable sur une photo cadrée
+    différemment d'une fois sur l'autre. Retourne None si Tesseract est indisponible ou si la
+    zone n'a pas pu être repérée (l'extraction se fait alors seulement sur les pages complètes)."""
+    if not ocr_engine.is_available():
+        return None
+    from app import parser
+
+    for page in reversed(pages):  # le tableau est presque toujours sur la dernière page
+        try:
+            region = parser.find_summary_table_region(page)
+        except Exception:  # noqa: BLE001
+            region = None
+        if region is not None:
+            if region.width < 2200:
+                scale = 2200 / region.width
+                region = region.resize(
+                    (int(region.width * scale), int(region.height * scale)), Image.LANCZOS
+                )
+            return region
+    return None
 
 
 def _call_gemini(api_key: str, parts: list[dict], response_schema: dict | None = None) -> dict:
@@ -123,8 +158,17 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
     for page in pages:
         parts.append({
             "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": _image_to_jpeg_b64(page),
+                "mime_type": "image/png",
+                "data": _image_to_png_b64(page),
+            }
+        })
+    zoom = _locate_summary_zoom(pages)
+    if zoom is not None:
+        parts.append({"text": "Agrandissement du tableau récapitulatif (en-tête + ligne de données) :"})
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/png",
+                "data": _image_to_png_b64(zoom),
             }
         })
 

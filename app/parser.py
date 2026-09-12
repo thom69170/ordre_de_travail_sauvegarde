@@ -100,7 +100,9 @@ def extract_trajets(all_text: str) -> list[str]:
     return labels
 
 
-def _find_summary_band(image: Image.Image) -> tuple[Image.Image, int, int] | None:
+def _locate_header_cluster(image: Image.Image) -> list[dict] | None:
+    """Repère le groupe de mots-clés (TPS/TAD/TTE/Ampli/RCN) formant l'en-tête du tableau
+    récapitulatif, en s'appuyant sur l'OCR local (Tesseract)."""
     words = ocr_engine.ocr_word_boxes(image, psm=6)
     candidates = [w for w in words if w["text"].upper().strip(":;,.") in HEADER_KEYWORDS]
     if len(candidates) < 3:
@@ -119,7 +121,12 @@ def _find_summary_band(image: Image.Image) -> tuple[Image.Image, int, int] | Non
         if not placed:
             groups.append([w])
     best = max(groups, key=len)
-    if len(best) < 3:
+    return best if len(best) >= 3 else None
+
+
+def _find_summary_band(image: Image.Image) -> tuple[Image.Image, int, int] | None:
+    best = _locate_header_cluster(image)
+    if best is None:
         return None
 
     header_top = min(w["top"] for w in best)
@@ -143,6 +150,24 @@ def _find_summary_band(image: Image.Image) -> tuple[Image.Image, int, int] | Non
 
     band = image.crop((0, band_top, width, band_bottom))
     return band, x_left, x_right
+
+
+def find_summary_table_region(image: Image.Image) -> Image.Image | None:
+    """Recadre l'en-tête ET la ligne de données du tableau récapitulatif (contrairement à
+    `_find_summary_band` qui ne garde que la ligne de données). Utilisé pour fournir un
+    agrandissement fiable à l'extraction par IA (Gemini)."""
+    best = _locate_header_cluster(image)
+    if best is None:
+        return None
+    header_top = min(w["top"] for w in best)
+    header_height = max(w["height"] for w in best)
+    width, img_height = image.size
+
+    top = max(0, header_top - int(header_height * 1.5))
+    bottom = min(img_height, header_top + int(header_height * 12))
+    if bottom <= top:
+        return None
+    return image.crop((0, top, width, bottom))
 
 
 _NUMBER_TOKEN = re.compile(r"\d+,\d+|\d{3,4}")
