@@ -9,7 +9,9 @@ set "PENDING_UPDATE=%LOCALAPPDATA%\OrdreDeTravail\pending_update"
 
 if exist "%PENDING_UPDATE%" (
     echo Application de la mise a jour telechargee...
-    robocopy "%PENDING_UPDATE%" "%~dp0" /E /NFL /NDL /NJH /NJS /NC /NS /NP >nul
+    rem /IS force la copie meme si robocopy pense que le fichier est "identique" (taille/date) :
+    rem sans ca, les fichiers fraichement extraits du zip GitHub sont souvent ignores a tort.
+    robocopy "%PENDING_UPDATE%" "%~dp0" /E /IS /IT /NFL /NDL /NJH /NJS /NC /NS /NP >nul
     rmdir /s /q "%PENDING_UPDATE%" >nul 2>&1
 )
 

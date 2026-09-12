@@ -115,9 +115,6 @@ def download_and_stage_update() -> None:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
 
-    marker = staging / "_from_version.txt"
-    marker.write_text(VERSION, encoding="utf-8")
-
 
 def restart_application() -> None:
     """Ferme l'application et relance Lancer.bat (qui appliquera la mise à jour en attente
