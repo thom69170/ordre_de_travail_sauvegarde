@@ -30,17 +30,18 @@ _UPLOAD_PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Envoyer une photo</title>
 <style>
-  body {{ font-family: Segoe UI, Arial, sans-serif; background: #fafafa; color: #202020;
-         margin: 0; padding: 24px 16px; text-align: center; }}
-  h1 {{ font-size: 20px; margin-bottom: 4px; }}
-  p {{ color: #636363; font-size: 14px; }}
-  input[type=file] {{ display: none; }}
-  label, button {{ display: inline-block; width: 100%; max-width: 320px; box-sizing: border-box;
+  body { font-family: Segoe UI, Arial, sans-serif; background: #fafafa; color: #202020;
+         margin: 0; padding: 24px 16px; text-align: center; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p { color: #636363; font-size: 14px; }
+  input[type=file] { display: none; }
+  label, button { display: inline-block; width: 100%; max-width: 320px; box-sizing: border-box;
          padding: 16px; margin-top: 16px; font-size: 16px; border-radius: 8px; border: none;
-         background: #005fb8; color: white; cursor: pointer; }}
-  #status {{ margin-top: 20px; font-size: 15px; }}
-  #preview {{ margin-top: 16px; max-width: 90%; max-height: 240px; border-radius: 8px;
-         display: none; }}
+         background: #005fb8; color: white; cursor: pointer; }
+  button:disabled { background: #a9a9a9; cursor: default; }
+  #status { margin-top: 20px; font-size: 15px; }
+  #preview { margin-top: 16px; max-width: 90%; max-height: 240px; border-radius: 8px;
+         display: none; }
 </style>
 </head>
 <body>
@@ -58,44 +59,44 @@ _UPLOAD_PAGE = """<!doctype html>
   const preview = document.getElementById('preview');
   let file = null;
 
-  input.addEventListener('change', () => {{
+  input.addEventListener('change', () => {
     file = input.files[0] || null;
     sendBtn.disabled = !file;
     status.textContent = '';
-    if (file && file.type.startsWith('image/')) {{
+    if (file && file.type.startsWith('image/')) {
       preview.src = URL.createObjectURL(file);
       preview.style.display = 'inline-block';
-    }} else {{
+    } else {
       preview.style.display = 'none';
-    }}
-  }});
+    }
+  });
 
-  sendBtn.addEventListener('click', () => {{
+  sendBtn.addEventListener('click', () => {
     if (!file) return;
     sendBtn.disabled = true;
     status.textContent = 'Envoi en cours...';
-    fetch(window.location.pathname, {{
+    fetch(window.location.pathname, {
       method: 'POST',
-      headers: {{
+      headers: {
         'Content-Type': file.type || 'application/octet-stream',
         'X-Filename': encodeURIComponent(file.name || 'photo.jpg'),
-      }},
+      },
       body: file,
-    }}).then(r => {{
-      if (r.ok) {{
+    }).then(r => {
+      if (r.ok) {
         status.textContent = 'Envoyé ! Tu peux fermer cette page ou envoyer une autre photo.';
         input.value = '';
         file = null;
         preview.style.display = 'none';
-      }} else {{
+      } else {
         status.textContent = "Échec de l'envoi (" + r.status + "). Réessaie.";
         sendBtn.disabled = false;
-      }}
-    }}).catch(() => {{
+      }
+    }).catch(() => {
       status.textContent = "Échec de l'envoi (connexion). Réessaie.";
       sendBtn.disabled = false;
-    }});
-  }});
+    });
+  });
 </script>
 </body>
 </html>"""
