@@ -11,8 +11,16 @@ if exist "%PENDING_UPDATE%" (
     echo Application de la mise a jour telechargee...
     rem /IS force la copie meme si robocopy pense que le fichier est "identique" (taille/date) :
     rem sans ca, les fichiers fraichement extraits du zip GitHub sont souvent ignores a tort.
-    robocopy "%PENDING_UPDATE%" "%~dp0" /E /IS /IT /NFL /NDL /NJH /NJS /NC /NS /NP >nul
-    rmdir /s /q "%PENDING_UPDATE%" >nul 2>&1
+    rem "%~dp0." (avec le point) plutot que "%~dp0" seul : %~dp0 se termine par un \, et un \
+    rem juste avant un guillemet fermant fait que Windows avale les indicateurs suivants dans
+    rem le chemin de destination (robocopy echouait alors silencieusement, tout etant redirige
+    rem vers nul, sans qu'aucun fichier ne soit jamais reellement copie).
+    robocopy "%PENDING_UPDATE%" "%~dp0." /E /IS /IT /NFL /NDL /NJH /NJS /NC /NS /NP >nul
+    if errorlevel 8 (
+        echo La mise a jour a echoue ^(erreur robocopy^) : l'application precedente va demarrer.
+    ) else (
+        rmdir /s /q "%PENDING_UPDATE%" >nul 2>&1
+    )
 )
 
 if not exist "%SETUP_MARKER%" (
