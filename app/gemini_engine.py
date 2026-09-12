@@ -37,6 +37,11 @@ même motif se répéter quelques fois : va bien jusqu'au dernier bloc avant "FI
 Un trajet oublié est une erreur : compte mentalement les blocs de trajet avant de répondre et
 vérifie que ta liste "trajets" a bien le même nombre d'entrées.
 
+Pour chaque page, en plus de la vue complète tu reçois aussi un agrandissement de sa moitié haute
+et un de sa moitié basse (elles se chevauchent légèrement au milieu) : utilise-les pour repérer
+et lire chaque bloc de service un par un sans en rater, la vue complète servant surtout à ne pas
+compter un bloc en double dans la zone de chevauchement.
+
 Sur la dernière page se trouve un tableau récapitulatif avec des colonnes (valeurs en centièmes
 d'heure, ex "7,47" = 7.47) : Date, TPS, TAD, Autres Temps, TTE, HLR 50% HI, HLR 100% HI, Amplitude
 (Ampli), Amp<12 HI25%, Amp 12-13 HI75%, Amp>13 HI100%, RCN 21h-6h, Repas P, Primes P,
@@ -129,6 +134,25 @@ def _locate_summary_zoom(pages: list[Image.Image]) -> Image.Image | None:
     return None
 
 
+def _split_page_halves(page: Image.Image) -> list[Image.Image]:
+    """Découpe une page en deux moitiés (haut/bas, avec un léger recouvrement) agrandies, pour
+    que les lignes du tableau des services (souvent nombreuses et petites, surtout sur une photo
+    de téléphone) soient plus faciles à distinguer une par une qu'en vue pleine page."""
+    width, height = page.size
+    overlap = int(height * 0.08)
+    halves = [
+        page.crop((0, 0, width, min(height, height // 2 + overlap))),
+        page.crop((0, max(0, height // 2 - overlap), width, height)),
+    ]
+    result = []
+    for half in halves:
+        if half.width < 1600:
+            scale = 1600 / half.width
+            half = half.resize((int(half.width * scale), int(half.height * scale)), Image.LANCZOS)
+        result.append(half)
+    return result
+
+
 def _call_gemini(api_key: str, parts: list[dict], response_schema: dict | None = None) -> dict:
     url = f"{API_BASE}/{MODEL_NAME}:generateContent?key={api_key}"
     body: dict = {"contents": [{"parts": parts}]}
@@ -175,12 +199,22 @@ def test_api_key(api_key: str) -> tuple[bool, str]:
 def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResult:
     """Envoie les pages du document à Gemini et reconstruit un ExtractionResult."""
     parts: list[dict] = [{"text": PROMPT}]
-    for page in pages:
+    for i, page in enumerate(pages, start=1):
+        parts.append({"text": f"Page {i} (vue complète) :"})
         parts.append({
             "inline_data": {
                 "mime_type": "image/png",
                 "data": _image_to_png_b64(page),
             }
+        })
+        top_half, bottom_half = _split_page_halves(page)
+        parts.append({"text": f"Page {i}, moitié haute agrandie :"})
+        parts.append({
+            "inline_data": {"mime_type": "image/png", "data": _image_to_png_b64(top_half)}
+        })
+        parts.append({"text": f"Page {i}, moitié basse agrandie :"})
+        parts.append({
+            "inline_data": {"mime_type": "image/png", "data": _image_to_png_b64(bottom_half)}
         })
     zoom = _locate_summary_zoom(pages)
     zoom_found = zoom is not None
