@@ -38,11 +38,10 @@ if not exist "%SETUP_MARKER%" (
 )
 
 rem Un .bat n'a pas d'icone propre (Windows utilise toujours l'icone generique des scripts) :
-rem cree un raccourci a cote, avec l'icone de l'app, la premiere fois (tu peux ensuite epingler
-rem ou deplacer ce raccourci sur le Bureau au lieu du .bat lui-meme).
-if not exist "%~dp0Ordres de travail.lnk" (
-    powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%~dp0Ordres de travail.lnk'); $s.TargetPath='%~dp0Ordres de travail.bat'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%~dp0assets\icon.ico'; $s.Save()" >nul 2>&1
-)
+rem cree un raccourci avec l'icone de l'app directement sur le Bureau, la premiere fois, peu
+rem importe ou se trouve ce dossier. [Environment]::GetFolderPath gere aussi le cas d'un Bureau
+rem redirige (ex: OneDrive). Ne fait rien si le raccourci existe deja (pas a chaque lancement).
+powershell -NoProfile -Command "$d=[Environment]::GetFolderPath('Desktop'); $p=Join-Path $d 'Ordres de travail.lnk'; if (-not (Test-Path $p)) { $s=(New-Object -ComObject WScript.Shell).CreateShortcut($p); $s.TargetPath='%~dp0Ordres de travail.bat'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%~dp0assets\icon.ico'; $s.Save() }" >nul 2>&1
 
 rem Lance l'app sans console (pythonw) et en tache detachee (start) pour que cette
 rem fenetre se ferme aussitot au lieu de rester affichee tant que l'app tourne.

@@ -25,8 +25,8 @@ statistiques par semaine / mois / année.
      (environnement dédié à l'app, isolé).
    - **Lancements suivants** : instantané, tout est déjà en place.
    - Un `.bat` n'ayant pas d'icône propre, un raccourci **« Ordres de travail »** (avec l'icône
-     de l'app) est créé automatiquement à côté au premier lancement — épingle-le ou déplace-le
-     sur le Bureau si tu veux un accès plus pratique que le `.bat` lui-même.
+     de l'app) est créé automatiquement **sur le Bureau** au premier lancement, quel que soit
+     l'endroit où se trouve ce dossier — utilise-le au quotidien plutôt que le `.bat` lui-même.
 2. Onglet **Importer** : choisis une photo ou un PDF d'ordre de travail. L'app tente de lire
    automatiquement la date, le récapitulatif (TPS/TTE/Amplitude...) et les trajets effectués.
    **Vérifie toujours les valeurs pré-remplies en les comparant à l'aperçu de la photo affiché
