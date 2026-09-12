@@ -41,6 +41,9 @@ class MainWindow(ttk.Frame):
         if widget is not None:
             self.notebook.select(widget)
 
+    def mark_update_available(self) -> None:
+        self.notebook.tab(self.settings_tab, text="Paramètres 🔵 MàJ")
+
     def refresh_other_tabs(self, source: str):
         if source != "history":
             self.history_tab.refresh()

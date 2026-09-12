@@ -89,9 +89,26 @@ def main() -> int:
         except tk.TclError:
             pass
 
-    MainWindow(root)
+    window = MainWindow(root)
+    _check_for_update_in_background(root, window)
     root.mainloop()
     return 0
+
+
+def _check_for_update_in_background(root: tk.Tk, window: MainWindow) -> None:
+    import threading
+
+    def worker():
+        try:
+            from app import updater
+
+            remote_version = updater.check_for_update()
+        except Exception:  # noqa: BLE001
+            remote_version = None
+        if remote_version:
+            root.after(0, lambda: window.settings_tab.set_update_available(remote_version))
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 if __name__ == "__main__":

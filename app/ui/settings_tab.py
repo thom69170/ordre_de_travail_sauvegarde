@@ -5,10 +5,11 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from app import config
-from app.ui.common import ACCENT, ERROR_FG, SUCCESS, WARN_BG, WARN_FG, ScrollableFrame
+from app.ui.common import ACCENT, ERROR_FG, SUCCESS, TEXT_MUTED, WARN_BG, WARN_FG, ScrollableFrame
+from app.version import VERSION
 
 API_KEY_URL = "https://aistudio.google.com/app/apikey"
 
@@ -17,6 +18,7 @@ class SettingsTab(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent)
         self.app = app
+        self._available_update_version: str | None = None
         self._build_ui()
         self._refresh_status()
 
@@ -24,6 +26,24 @@ class SettingsTab(ttk.Frame):
         scroll = ScrollableFrame(self)
         scroll.pack(fill="both", expand=True)
         form = scroll.inner
+
+        update_frame = ttk.LabelFrame(form, text="Mises à jour", padding=14)
+        update_frame.pack(fill="x", padx=14, pady=14)
+        ttk.Label(update_frame, text=f"Version installée : {VERSION}").pack(anchor="w")
+        self.update_status_label = ttk.Label(
+            update_frame, text="", wraplength=780, justify="left", foreground=TEXT_MUTED
+        )
+        self.update_status_label.pack(anchor="w", pady=(6, 8))
+        update_btn_row = ttk.Frame(update_frame)
+        update_btn_row.pack(fill="x")
+        self.check_update_btn = ttk.Button(
+            update_btn_row, text="Vérifier les mises à jour", command=self._check_update
+        )
+        self.check_update_btn.pack(side="left")
+        self.install_update_btn = ttk.Button(
+            update_btn_row, text="Télécharger et installer", command=self._install_update, state="disabled"
+        )
+        self.install_update_btn.pack(side="left", padx=8)
 
         intro = ttk.LabelFrame(form, text="Lecture automatique par IA (Gemini) — optionnel", padding=14)
         intro.pack(fill="x", padx=14, pady=14)
@@ -159,3 +179,79 @@ class SettingsTab(ttk.Frame):
         self.key_var.set("")
         self._refresh_status()
         self.app.refresh_other_tabs("settings")
+
+    # --------------------------------------------------------------- mises à jour
+
+    def set_update_available(self, remote_version: str) -> None:
+        """Appelé par la vérification automatique au démarrage (main.py) si une mise à jour
+        est disponible, pour refléter l'info ici sans que l'utilisateur ait à cliquer."""
+        self._available_update_version = remote_version
+        self.update_status_label.config(
+            text=f"🔵 Une nouvelle version est disponible : v{remote_version}.",
+            foreground=ACCENT,
+        )
+        self.install_update_btn.config(state="normal")
+        self.app.mark_update_available()
+
+    def _check_update(self):
+        self.check_update_btn.config(state="disabled")
+        self.update_status_label.config(text="Vérification en cours...", foreground=ACCENT)
+        self.update_idletasks()
+        threading.Thread(target=self._check_update_worker, daemon=True).start()
+
+    def _check_update_worker(self):
+        from app import updater
+
+        remote = updater.check_for_update()
+        self.after(0, lambda: self._on_check_update_result(remote))
+
+    def _on_check_update_result(self, remote_version: str | None):
+        self.check_update_btn.config(state="normal")
+        if remote_version:
+            self.set_update_available(remote_version)
+        else:
+            self._available_update_version = None
+            self.update_status_label.config(
+                text="✓ Tu as déjà la dernière version (ou la vérification est indisponible "
+                     "sans connexion internet).",
+                foreground=SUCCESS,
+            )
+            self.install_update_btn.config(state="disabled")
+
+    def _install_update(self):
+        if not messagebox.askyesno(
+            "Installer la mise à jour",
+            f"Télécharger et installer la version {self._available_update_version} ?\n\n"
+            "L'application va se fermer et redémarrer automatiquement pour terminer "
+            "l'installation.",
+        ):
+            return
+        self.install_update_btn.config(state="disabled")
+        self.check_update_btn.config(state="disabled")
+        self.update_status_label.config(text="Téléchargement de la mise à jour...", foreground=ACCENT)
+        self.update_idletasks()
+        threading.Thread(target=self._install_update_worker, daemon=True).start()
+
+    def _install_update_worker(self):
+        from app import updater
+
+        try:
+            updater.download_and_stage_update()
+        except updater.UpdateError as exc:
+            self.after(0, lambda: self._on_install_error(str(exc)))
+            return
+        self.after(0, self._on_install_success)
+
+    def _on_install_error(self, message: str):
+        self.check_update_btn.config(state="normal")
+        self.install_update_btn.config(state="normal")
+        self.update_status_label.config(text=f"✗ Échec de la mise à jour : {message}", foreground=ERROR_FG)
+
+    def _on_install_success(self):
+        from app import updater
+
+        messagebox.showinfo(
+            "Mise à jour prête",
+            "Mise à jour téléchargée. L'application va redémarrer pour l'appliquer.",
+        )
+        updater.restart_application()
