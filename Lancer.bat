@@ -3,6 +3,7 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 set "RUNTIME_PY=%LOCALAPPDATA%\OrdreDeTravail\runtime\venv\Scripts\python.exe"
+set "RUNTIME_PYW=%LOCALAPPDATA%\OrdreDeTravail\runtime\venv\Scripts\pythonw.exe"
 set "SETUP_MARKER=%LOCALAPPDATA%\OrdreDeTravail\runtime\setup_complete.txt"
 
 if not exist "%SETUP_MARKER%" (
@@ -16,9 +17,6 @@ if not exist "%SETUP_MARKER%" (
     )
 )
 
-"%RUNTIME_PY%" main.py
-if errorlevel 1 (
-    echo.
-    echo Une erreur est survenue au lancement.
-    pause
-)
+rem Lance l'app sans console (pythonw) et en tache detachee (start) pour que cette
+rem fenetre se ferme aussitot au lieu de rester affichee tant que l'app tourne.
+start "" "%RUNTIME_PYW%" "%~dp0main.py"

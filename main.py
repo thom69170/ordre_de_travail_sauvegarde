@@ -1,14 +1,45 @@
-"""Point d'entrée de l'application Ordres de travail."""
+"""Point d'entrée de l'application Ordres de travail.
+
+Lancé via pythonw.exe (sans console) par Lancer.bat : toute erreur doit donc être signalée par
+une fenêtre de dialogue plutôt qu'un message dans un terminal que personne ne verrait.
+"""
 from __future__ import annotations
 
 import sys
-import tkinter as tk
-import traceback
-from tkinter import messagebox, ttk
 
-from app import db, ocr_engine
-from app.paths import icon_path
-from app.ui.main_window import APP_TITLE, MainWindow
+
+def _fatal_error(message: str) -> None:
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Erreur au démarrage", message)
+        root.destroy()
+    except Exception:  # noqa: BLE001
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, message, "Erreur au démarrage", 0x10)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+try:
+    import traceback
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+
+    from app import db, ocr_engine
+    from app.paths import icon_path
+    from app.ui.main_window import APP_TITLE, MainWindow
+except Exception as exc:  # noqa: BLE001
+    _fatal_error(
+        f"Impossible de démarrer l'application :\n{exc}\n\n"
+        "Essaie de relancer Lancer.bat. Si le problème persiste, consulte le README du projet."
+    )
+    sys.exit(1)
 
 
 def _install_error_dialog(root: tk.Tk) -> None:
@@ -64,4 +95,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:  # noqa: BLE001
+        _fatal_error(f"Erreur inattendue au démarrage :\n{exc}")
+        sys.exit(1)

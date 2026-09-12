@@ -87,8 +87,12 @@ class HistoryTab(ttk.Frame):
         orders = db.list_work_orders(start_date, end_date)
         total_tte = 0.0
         for wo in orders:
+            try:
+                display_date = date.fromisoformat(wo.date).strftime("%d/%m/%Y")
+            except ValueError:
+                display_date = wo.date
             self.tree.insert("", "end", iid=str(wo.id), values=(
-                wo.date, wo.driver_name, hours_to_hm(wo.tps), hours_to_hm(wo.tte),
+                display_date, wo.driver_name, hours_to_hm(wo.tps), hours_to_hm(wo.tte),
                 hours_to_hm(wo.ampli), ", ".join(sorted(set(wo.trajets))),
             ))
             total_tte += wo.tte
@@ -132,7 +136,11 @@ class HistoryTab(ttk.Frame):
         wo = db.get_work_order(work_order_id)
         if wo is None:
             return
-        if not messagebox.askyesno("Confirmer", f"Supprimer l'ordre de travail du {wo.date} ?"):
+        try:
+            display_date = date.fromisoformat(wo.date).strftime("%d/%m/%Y")
+        except ValueError:
+            display_date = wo.date
+        if not messagebox.askyesno("Confirmer", f"Supprimer l'ordre de travail du {display_date} ?"):
             return
         db.delete_work_order(work_order_id)
         if wo.source_filename:
