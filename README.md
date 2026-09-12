@@ -36,7 +36,24 @@ statistiques par semaine / mois / année.
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
    l'onglet, avec le lien pour générer une clé gratuite. **Si tu configures une clé, tes photos
    sont alors envoyées aux serveurs de Google pour être analysées** (l'onglet l'explique
-   clairement) ; sans clé, tout continue de fonctionner en local comme avant.
+   clairement) ; sans clé, tout continue de fonctionner en local comme avant. Cet onglet permet
+   aussi de vérifier et d'installer les mises à jour (voir ci-dessous).
+
+## Mises à jour
+
+L'app vérifie automatiquement (au démarrage, en arrière-plan, sans bloquer) si une nouvelle
+version est publiée sur ce dépôt GitHub. Si oui, l'onglet **Paramètres** se marque ("Paramètres 🔵
+MàJ") ; un bouton **Vérifier les mises à jour** permet aussi de le faire à la demande. Clique sur
+**Télécharger et installer** pour l'installer : l'app se ferme et redémarre automatiquement une
+fois terminé.
+
+Comme cette mise à jour ne télécharge et n'exécute jamais de `.exe` (uniquement les fichiers
+source du dépôt, appliqués par simple copie de fichiers avant le redémarrage), le Contrôle
+intelligent des applications de Windows n'a rien à bloquer.
+
+Pour publier une mise à jour toi-même : après avoir modifié le code et testé, incrémente
+`VERSION` dans `app/version.py` avant de commit/push — c'est cette comparaison de version qui
+déclenche la détection côté utilisateurs.
 
 Tes données (base + copies des photos/PDF importés, et la clé Gemini si tu en configures une)
 sont stockées dans : `%LOCALAPPDATA%\OrdreDeTravail\` (généralement
@@ -169,6 +186,8 @@ pas garanti à 100 % → `Lancer.bat` reste la méthode recommandée.
 - `app/gemini_engine.py` — extraction équivalente via l'API Gemini (si une clé est configurée)
 - `app/extraction.py` — choisit Gemini ou Tesseract, avec repli automatique sur Tesseract
 - `app/config.py` — configuration locale (clé API Gemini)
+- `app/version.py` / `app/updater.py` — numéro de version et vérification/installation des
+  mises à jour depuis GitHub
 - `app/stats.py` — agrégations semaine/mois/année, classement des trajets
 - `app/ui/` — interface graphique (Tkinter) : onglets Importer / Historique / Statistiques /
   Paramètres
