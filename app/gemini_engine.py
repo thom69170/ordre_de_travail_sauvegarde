@@ -153,6 +153,26 @@ def _split_page_halves(page: Image.Image) -> list[Image.Image]:
     return result
 
 
+def _tesseract_trajets(pages: list[Image.Image]) -> list[str] | None:
+    """Récupère la liste des trajets via l'OCR local + une recherche par motif (regex), qui
+    énumère mécaniquement chaque occurrence sans "se lasser" d'une répétition — contrairement à
+    Gemini qui a tendance à résumer/tronquer les listes très répétitives plutôt que de toutes les
+    lister. Retourne None si Tesseract est indisponible."""
+    if not ocr_engine.is_available():
+        return None
+    from app import parser
+
+    texts = []
+    for page in pages:
+        try:
+            texts.append(ocr_engine.ocr_text(page, psm=6))
+        except Exception:  # noqa: BLE001
+            pass
+    if not texts:
+        return None
+    return parser.extract_trajets("\n".join(texts))
+
+
 def _call_gemini(api_key: str, parts: list[dict], response_schema: dict | None = None) -> dict:
     url = f"{API_BASE}/{MODEL_NAME}:generateContent?key={api_key}"
     body: dict = {"contents": [{"parts": parts}]}
@@ -248,10 +268,20 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         else:
             missing_fields.append(label)
 
-    result.trajets = [
+    gemini_trajets = [
         _normalize_trajet(str(t)) for t in (payload.get("trajets") or []) if str(t).strip()
     ]
+    tesseract_trajets = _tesseract_trajets(pages)
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
+    if tesseract_trajets and len(tesseract_trajets) > len(gemini_trajets):
+        result.trajets = tesseract_trajets
+        result.warnings.append(
+            f"Trajets obtenus via l'OCR local ({len(tesseract_trajets)} trouvés contre "
+            f"{len(gemini_trajets)} par Gemini, qui a tendance à en manquer sur les listes très "
+            "répétitives) : vérifie quand même la liste."
+        )
+    else:
+        result.trajets = gemini_trajets
     if missing_fields:
         result.warnings.append(
             "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)
