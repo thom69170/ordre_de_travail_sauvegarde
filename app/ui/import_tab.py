@@ -130,8 +130,15 @@ class ImportTab(ttk.Frame):
 
         trajets_frame = ttk.LabelFrame(form, text="Trajets / lignes détectés", padding=10)
         trajets_frame.pack(fill="x", padx=4, pady=6)
-        self.trajet_listbox = tk.Listbox(trajets_frame, height=6, selectmode="extended")
-        self.trajet_listbox.pack(fill="x", side="top")
+        self.trajets_count_label = ttk.Label(trajets_frame, text="0 trajet", foreground=TEXT_MUTED)
+        self.trajets_count_label.pack(anchor="w")
+        listbox_row = ttk.Frame(trajets_frame)
+        listbox_row.pack(fill="x", side="top")
+        self.trajet_listbox = tk.Listbox(listbox_row, height=8, selectmode="extended")
+        self.trajet_listbox.pack(side="left", fill="both", expand=True)
+        trajet_scroll = ttk.Scrollbar(listbox_row, orient="vertical", command=self.trajet_listbox.yview)
+        trajet_scroll.pack(side="left", fill="y")
+        self.trajet_listbox.config(yscrollcommand=trajet_scroll.set)
         add_row = ttk.Frame(trajets_frame)
         add_row.pack(fill="x", pady=(6, 0))
         self.new_trajet_var = tk.StringVar()
@@ -274,6 +281,7 @@ class ImportTab(ttk.Frame):
         self.trajet_listbox.delete(0, "end")
         for label in extraction.trajets:
             self.trajet_listbox.insert("end", label)
+        self._update_trajets_count()
 
         if extraction.warnings:
             from app.ui.common import show_warnings
@@ -312,10 +320,16 @@ class ImportTab(ttk.Frame):
         if label:
             self.trajet_listbox.insert("end", label)
             self.new_trajet_var.set("")
+            self._update_trajets_count()
 
     def _remove_selected_trajets(self):
         for idx in reversed(self.trajet_listbox.curselection()):
             self.trajet_listbox.delete(idx)
+        self._update_trajets_count()
+
+    def _update_trajets_count(self):
+        count = self.trajet_listbox.size()
+        self.trajets_count_label.config(text=f"{count} trajet{'s' if count != 1 else ''}")
 
     def load_for_edit(self, work_order: WorkOrder):
         self.reset_form()
@@ -331,6 +345,7 @@ class ImportTab(ttk.Frame):
         self.trajet_listbox.delete(0, "end")
         for label in work_order.trajets:
             self.trajet_listbox.insert("end", label)
+        self._update_trajets_count()
         self.notes_text.delete("1.0", "end")
         self.notes_text.insert("1.0", work_order.notes)
 
@@ -362,6 +377,7 @@ class ImportTab(ttk.Frame):
         for entry in self.summary_entries.values():
             entry.set_decimal(0.0)
         self.trajet_listbox.delete(0, "end")
+        self._update_trajets_count()
         self.notes_text.delete("1.0", "end")
         for child in self.warnings_holder.winfo_children():
             child.destroy()
