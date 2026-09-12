@@ -124,8 +124,8 @@ def restart_application() -> None:
 
     lancer_bat = base_dir() / "Lancer.bat"
     subprocess.Popen(
-        ["cmd", "/c", "start", "", str(lancer_bat)],
+        ["cmd", "/c", str(lancer_bat)],
         cwd=str(base_dir()),
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
     os._exit(0)

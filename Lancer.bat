@@ -15,7 +15,10 @@ if exist "%PENDING_UPDATE%" (
     rem juste avant un guillemet fermant fait que Windows avale les indicateurs suivants dans
     rem le chemin de destination (robocopy echouait alors silencieusement, tout etant redirige
     rem vers nul, sans qu'aucun fichier ne soit jamais reellement copie).
-    robocopy "%PENDING_UPDATE%" "%~dp0." /E /IS /IT /NFL /NDL /NJH /NJS /NC /NS /NP >nul
+    rem /R:3 /W:1 : par defaut robocopy retente 1 million de fois en attendant 30s a chaque
+    rem fois si un fichier semble verrouille (ex: l'ancienne instance qui vient de se fermer et
+    rem n'a pas encore relache tous ses fichiers) - ca peut bloquer cette fenetre tres longtemps.
+    robocopy "%PENDING_UPDATE%" "%~dp0." /E /IS /IT /R:3 /W:1 /NFL /NDL /NJH /NJS /NC /NS /NP >nul
     if errorlevel 8 (
         echo La mise a jour a echoue ^(erreur robocopy^) : l'application precedente va demarrer.
     ) else (
