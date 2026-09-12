@@ -14,7 +14,7 @@ import urllib.request
 
 from PIL import Image
 
-from app.models import ExtractionResult, SUMMARY_FIELD_NAMES
+from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES
 
 MODEL_NAME = "gemini-3.5-flash-lite"
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -34,11 +34,16 @@ sont très souvent vides : mets alors 0.
 Réponds uniquement avec les champs demandés par le schéma :
 - date au format ISO AAAA-MM-JJ
 - tous les nombres en notation décimale avec un point (jamais de virgule)
+- "summary" DOIT contenir une valeur numérique pour CHACUNE des 16 colonnes, dans le même ordre
+  que le tableau, même quand la case est vide (0) ou que tu n'es pas sûr (fais ta meilleure
+  estimation plutôt que d'omettre le champ - un champ manquant est traité comme une erreur bien
+  plus grave qu'une valeur légèrement imprécise)
 - "trajets" : liste des trajets tels qu'ils apparaissent dans le tableau des services, un par
   ligne rencontrée (les doublons sont normaux et voulus), chacun normalisé en
   "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre alphabétique, sans les codes entre
   parenthèses ni la mention GIR/QUAI)
-- "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus (vide si tout est clair)
+- "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus, y compris ceux du
+  tableau récapitulatif où tu as dû deviner (vide seulement si tout est clair)
 """
 
 RESPONSE_SCHEMA = {
@@ -50,6 +55,7 @@ RESPONSE_SCHEMA = {
         "summary": {
             "type": "OBJECT",
             "properties": {name: {"type": "NUMBER"} for name in SUMMARY_FIELD_NAMES},
+            "required": list(SUMMARY_FIELD_NAMES),
         },
         "trajets": {"type": "ARRAY", "items": {"type": "STRING"}},
         "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -135,12 +141,20 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
     result.date = str(payload.get("date") or "").strip()
 
     summary_raw = payload.get("summary") or {}
-    for name in SUMMARY_FIELD_NAMES:
+    missing_fields = []
+    for name, label in SUMMARY_FIELDS:
         value = summary_raw.get(name)
         if isinstance(value, (int, float)):
             result.summary[name] = round(float(value), 2)
+        else:
+            missing_fields.append(label)
 
     result.trajets = [str(t).strip() for t in (payload.get("trajets") or []) if str(t).strip()]
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
+    if missing_fields:
+        result.warnings.append(
+            "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)
+            + " (mis à 0 par défaut, à vérifier)."
+        )
     result.warnings.append("Lecture effectuée par l'IA Gemini : vérifie quand même les champs.")
     return result
