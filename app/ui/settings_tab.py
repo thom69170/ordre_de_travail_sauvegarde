@@ -12,6 +12,7 @@ from app.ui.common import ACCENT, ERROR_FG, SUCCESS, TEXT_MUTED, WARN_BG, WARN_F
 from app.version import VERSION
 
 API_KEY_URL = "https://aistudio.google.com/app/apikey"
+CONTACT_EMAIL = "contact@informatiqueetsolution.fr"
 
 
 class SettingsTab(ttk.Frame):
@@ -44,6 +45,23 @@ class SettingsTab(ttk.Frame):
             update_btn_row, text="Télécharger et installer", command=self._install_update, state="disabled"
         )
         self.install_update_btn.pack(side="left", padx=8)
+
+        contact_frame = ttk.LabelFrame(form, text="Contact / Support", padding=14)
+        contact_frame.pack(fill="x", padx=14, pady=(0, 14))
+        ttk.Label(
+            contact_frame,
+            text="Un problème, un bug, une idée d'amélioration ? Écris-moi directement :",
+            wraplength=780, justify="left",
+        ).pack(anchor="w")
+        contact_row = ttk.Frame(contact_frame)
+        contact_row.pack(fill="x", pady=(8, 0))
+        ttk.Label(contact_row, text=CONTACT_EMAIL, font=("Segoe UI", 10, "bold")).pack(side="left")
+        ttk.Button(
+            contact_row, text="Envoyer un e-mail",
+            command=lambda: webbrowser.open(
+                f"mailto:{CONTACT_EMAIL}?subject=Ordres%20de%20travail%20-%20Suggestion%20ou%20probl%C3%A8me"
+            ),
+        ).pack(side="left", padx=8)
 
         intro = ttk.LabelFrame(form, text="Lecture automatique par IA (Gemini) — optionnel", padding=14)
         intro.pack(fill="x", padx=14, pady=14)
