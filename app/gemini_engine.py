@@ -24,7 +24,18 @@ TIMEOUT_SECONDS = 60
 PROMPT = """Tu analyses un "ordre de travail" (feuille de route) d'un chauffeur de bus/car en France.
 Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique le nom du chauffeur,
 son matricule (nombre) et la date du jour (ex: "Jeudi 16 JUILLET 2026"). Le corps liste les
-services de la journée avec des trajets du type "LIEU A (CODE) / LIEU B (CODE)".
+services de la journée, un service par bloc de lignes ; parmi eux, certains blocs (souvent
+identifiés par un code du type "164TATA1520 (164LVH...") contiennent un trajet du type
+"LIEU A (CODE) / LIEU B (CODE)" sur 1 ou 2 lignes.
+
+Ces blocs de trajet se répètent souvent 8 à 15 fois sur la page, parfois avec des lignes très
+similaires les unes aux autres (ex: le même aller-retour répété toute la journée) : c'est normal,
+et c'est justement pour ça qu'il faut être méthodique. Parcours le tableau des services du haut
+vers le bas, bloc par bloc, et pour CHAQUE bloc qui contient un trajet "LIEU / LIEU", ajoute une
+entrée dans "trajets" - même s'il est identique au précédent. Ne t'arrête pas après avoir vu le
+même motif se répéter quelques fois : va bien jusqu'au dernier bloc avant "FIN DE SERVICE"/"FSR".
+Un trajet oublié est une erreur : compte mentalement les blocs de trajet avant de répondre et
+vérifie que ta liste "trajets" a bien le même nombre d'entrées.
 
 Sur la dernière page se trouve un tableau récapitulatif avec des colonnes (valeurs en centièmes
 d'heure, ex "7,47" = 7.47) : Date, TPS, TAD, Autres Temps, TTE, HLR 50% HI, HLR 100% HI, Amplitude
@@ -74,6 +85,15 @@ RESPONSE_SCHEMA = {
 
 class GeminiError(Exception):
     pass
+
+
+def _normalize_trajet(raw: str) -> str:
+    """Force l'ordre alphabétique des deux lieux, quoi que Gemini ait renvoyé : sans ça, "A / B"
+    et "B / A" seraient comptés comme deux trajets différents dans les statistiques."""
+    parts = [p.strip(" .-") for p in raw.split("/")]
+    if len(parts) != 2 or not all(parts):
+        return raw.strip()
+    return " / ".join(sorted(parts, key=str.upper))
 
 
 def _image_to_png_b64(image: Image.Image) -> str:
@@ -194,7 +214,9 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         else:
             missing_fields.append(label)
 
-    result.trajets = [str(t).strip() for t in (payload.get("trajets") or []) if str(t).strip()]
+    result.trajets = [
+        _normalize_trajet(str(t)) for t in (payload.get("trajets") or []) if str(t).strip()
+    ]
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
     if missing_fields:
         result.warnings.append(
