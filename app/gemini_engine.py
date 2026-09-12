@@ -163,6 +163,7 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
             }
         })
     zoom = _locate_summary_zoom(pages)
+    zoom_found = zoom is not None
     if zoom is not None:
         parts.append({"text": "Agrandissement du tableau récapitulatif (en-tête + ligne de données) :"})
         parts.append({
@@ -199,6 +200,12 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         result.warnings.append(
             "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)
             + " (mis à 0 par défaut, à vérifier)."
+        )
+    if not zoom_found:
+        result.warnings.append(
+            "Agrandissement automatique du tableau récapitulatif non trouvé sur ce document "
+            "(l'OCR local n'a pas repéré l'en-tête TPS/TAD/TTE...) : Gemini a lu la page entière, "
+            "vérifie particulièrement bien le tableau récapitulatif."
         )
     result.warnings.append("Lecture effectuée par l'IA Gemini : vérifie quand même les champs.")
     return result

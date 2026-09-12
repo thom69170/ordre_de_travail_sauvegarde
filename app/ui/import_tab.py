@@ -156,17 +156,36 @@ class ImportTab(ttk.Frame):
     def _maybe_show_ocr_banner(self):
         for child in self.banner_holder.winfo_children():
             child.destroy()
-        if ocr_engine.is_available() or config.get_gemini_api_key():
+
+        has_gemini = bool(config.get_gemini_api_key())
+        has_tesseract = ocr_engine.is_available()
+
+        if not has_tesseract and not has_gemini:
+            bar = tk.Frame(self.banner_holder, bg=WARN_BG, padx=10, pady=8)
+            bar.pack(fill="x")
+            tk.Label(
+                bar,
+                text="Moteur OCR (Tesseract) introuvable : la lecture automatique est désactivée, "
+                     "tu peux quand même saisir les données à la main ci-dessous.",
+                bg=WARN_BG, fg=WARN_FG, anchor="w", justify="left", wraplength=700,
+            ).pack(side="left", fill="x", expand=True)
+            ttk.Button(bar, text="Installer Tesseract OCR", command=self._install_tesseract).pack(side="right")
             return
-        bar = tk.Frame(self.banner_holder, bg=WARN_BG, padx=10, pady=8)
-        bar.pack(fill="x")
-        tk.Label(
-            bar,
-            text="Moteur OCR (Tesseract) introuvable : la lecture automatique est désactivée, "
-                 "tu peux quand même saisir les données à la main ci-dessous.",
-            bg=WARN_BG, fg=WARN_FG, anchor="w", justify="left", wraplength=700,
-        ).pack(side="left", fill="x", expand=True)
-        ttk.Button(bar, text="Installer Tesseract OCR", command=self._install_tesseract).pack(side="right")
+
+        if not has_gemini:
+            bar = tk.Frame(self.banner_holder, bg=WARN_BG, padx=10, pady=8)
+            bar.pack(fill="x")
+            tk.Label(
+                bar,
+                text="La lecture automatique utilise l'OCR local (Tesseract) : rapide et gratuit, "
+                     "mais souvent imprécis — attends-toi à devoir corriger plusieurs champs à la "
+                     "main. Une clé API Gemini (gratuite) rend la lecture bien plus fiable.",
+                bg=WARN_BG, fg=WARN_FG, anchor="w", justify="left", wraplength=700,
+            ).pack(side="left", fill="x", expand=True)
+            ttk.Button(
+                bar, text="Configurer Gemini (onglet Paramètres)",
+                command=lambda: self.app.select_tab("settings"),
+            ).pack(side="right")
 
     def _install_tesseract(self):
         if not messagebox.askyesno(
