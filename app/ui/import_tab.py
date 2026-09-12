@@ -76,6 +76,11 @@ class ImportTab(ttk.Frame):
         self.choose_btn = ttk.Button(top, text="Choisir une photo ou un PDF...", command=self.choose_file)
         self.choose_btn.pack(side="left")
 
+        self.phone_btn = ttk.Button(
+            top, text="Recevoir depuis le téléphone...", command=self._open_phone_upload_dialog
+        )
+        self.phone_btn.pack(side="left", padx=(8, 0))
+
         self.file_label = ttk.Label(top, text="Aucun fichier sélectionné", foreground=TEXT_MUTED)
         self.file_label.pack(side="left", padx=10)
 
@@ -225,6 +230,20 @@ class ImportTab(ttk.Frame):
         path = Path(path_str)
         self.current_path = path
         self.file_label.config(text=path.name)
+        self.status_label.config(text="Analyse en cours...")
+        self.choose_btn.config(state="disabled")
+        self.update_idletasks()
+        threading.Thread(target=self._process_file, args=(path,), daemon=True).start()
+
+    def _open_phone_upload_dialog(self):
+        from app.ui.phone_upload_dialog import PhoneUploadDialog
+
+        PhoneUploadDialog(self.winfo_toplevel(), on_file_received=self._receive_file_from_phone)
+
+    def _receive_file_from_phone(self, path: Path):
+        self.reset_form(keep_file_dialog_open=True)
+        self.current_path = path
+        self.file_label.config(text=f"{path.name} (reçu du téléphone)")
         self.status_label.config(text="Analyse en cours...")
         self.choose_btn.config(state="disabled")
         self.update_idletasks()

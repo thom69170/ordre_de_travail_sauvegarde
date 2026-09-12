@@ -43,6 +43,13 @@ def imports_dir() -> Path:
     return d
 
 
+def phone_uploads_dir() -> Path:
+    """Dossier temporaire pour les photos reçues depuis le téléphone (voir app/phone_upload.py)."""
+    d = data_dir() / "phone_uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def db_path() -> Path:
     return data_dir() / "ordres.db"
 

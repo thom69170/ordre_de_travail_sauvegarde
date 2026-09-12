@@ -32,6 +32,13 @@ statistiques par semaine / mois / année.
    **Vérifie toujours les valeurs pré-remplies en les comparant à l'aperçu de la photo affiché
    à gauche** avant d'enregistrer : l'OCR (lecture automatique) n'est pas fiable à 100 %,
    surtout sur des photos prises au téléphone (flou, reflet, pli du papier...).
+   - **Envoyer une photo depuis le téléphone** : bouton **Recevoir depuis le téléphone...**.
+     Une fenêtre affiche un QR code ; scanne-le avec l'appareil photo du téléphone (connecté au
+     **même Wi-Fi** que ce PC) pour ouvrir une page qui permet de prendre la photo ou de choisir
+     un fichier et de l'envoyer directement — pas d'appli à installer sur le téléphone. La photo
+     reçue est traitée automatiquement, comme si elle avait été importée depuis le PC. Windows
+     peut demander une autorisation de pare-feu la première fois (à accepter, sinon le téléphone
+     ne peut pas joindre le PC).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.

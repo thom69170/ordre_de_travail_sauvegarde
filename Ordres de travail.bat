@@ -23,6 +23,9 @@ if exist "%PENDING_UPDATE%" (
         echo La mise a jour a echoue ^(erreur robocopy^) : l'application precedente va demarrer.
     ) else (
         rmdir /s /q "%PENDING_UPDATE%" >nul 2>&1
+        rem Une mise a jour peut ajouter une nouvelle dependance Python (ex: qrcode) : on
+        rem s'assure qu'elle est installee, meme si le venv existait deja avant cette maj.
+        "%RUNTIME_PY%" -m pip install --quiet --no-warn-script-location -r "%~dp0requirements-app.txt" >nul 2>&1
     )
 )
 

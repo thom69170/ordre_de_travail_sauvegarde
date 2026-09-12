@@ -3,3 +3,4 @@ pillow
 pytesseract
 sv-ttk
 pywinstyles
+qrcode
