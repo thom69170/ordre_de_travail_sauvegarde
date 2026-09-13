@@ -90,16 +90,6 @@ class ImportTab(ttk.Frame):
         self.banner_holder = ttk.Frame(self)
         self.banner_holder.pack(fill="x")
 
-        # Empaquetée avant "body" (avec side="bottom") pour garder cette barre toujours visible,
-        # même quand le contenu du formulaire ne tient pas dans la fenêtre (petit écran, ou mise
-        # à l'échelle Windows élevée) : sinon "body" (fill="both", expand=True) prend toute la
-        # place disponible en premier et repousse "Enregistrer" hors de la fenêtre.
-        bottom = ttk.Frame(self, padding=12)
-        bottom.pack(side="bottom", fill="x")
-        self.save_btn = ttk.Button(bottom, text="Enregistrer", command=self.save)
-        self.save_btn.pack(side="right")
-        ttk.Button(bottom, text="Réinitialiser le formulaire", command=self.reset_form).pack(side="right", padx=8)
-
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
 
@@ -132,6 +122,12 @@ class ImportTab(ttk.Frame):
 
         self.matricule_entry = LabeledEntry(header, "Matricule", width=10)
         self.matricule_entry.pack(side="left")
+
+        ttk.Button(header, text="Réinitialiser le formulaire", command=self.reset_form).pack(
+            side="left", padx=(20, 6)
+        )
+        self.save_btn = ttk.Button(header, text="Enregistrer", command=self.save)
+        self.save_btn.pack(side="left")
 
         summary_frame = ttk.LabelFrame(form, text="Récapitulatif (centièmes d'heure)", padding=10)
         summary_frame.pack(fill="x", padx=4, pady=6)
