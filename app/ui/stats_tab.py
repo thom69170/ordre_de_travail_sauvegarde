@@ -89,9 +89,9 @@ class StatsTab(ttk.Frame):
             ttk.Radiobutton(period_row, text=p, value=p, variable=self.period_var,
                              command=self.refresh).pack(side="left", padx=4)
 
-        chart_scroll = ScrollableFrame(left)
-        chart_scroll.pack(fill="both", expand=True)
-        self.chart_holder = chart_scroll.inner
+        self.chart_scroll = ScrollableFrame(left)
+        self.chart_scroll.pack(fill="both", expand=True)
+        self.chart_holder = self.chart_scroll.inner
 
         right = ttk.LabelFrame(mid, text="Trajets les plus fréquents", padding=12)
         right.pack(side="left", fill="both", expand=True, padx=(0, 12), pady=(0, 12))
@@ -106,9 +106,9 @@ class StatsTab(ttk.Frame):
         ).pack(side="left", padx=4)
         self.trajet_scope_var.trace_add("write", lambda *a: self.refresh())
 
-        trajet_scroll = ScrollableFrame(right)
-        trajet_scroll.pack(fill="both", expand=True)
-        self.trajet_holder = trajet_scroll.inner
+        self.trajet_scroll = ScrollableFrame(right)
+        self.trajet_scroll.pack(fill="both", expand=True)
+        self.trajet_holder = self.trajet_scroll.inner
 
     def refresh(self):
         week_start, week_end = _current_week_range()
@@ -143,6 +143,7 @@ class StatsTab(ttk.Frame):
                 BarRow(self.chart_holder, p.label, hours_to_hm(p.tte), p.tte / max_tte).pack(
                     fill="x", pady=2, padx=2
                 )
+        self.chart_scroll.scroll_to_top()
 
         for child in self.trajet_holder.winfo_children():
             child.destroy()
@@ -166,3 +167,4 @@ class StatsTab(ttk.Frame):
                 BarRow(self.trajet_holder, t.label, f"{t.count}×", t.count / max_count, color=SUCCESS).pack(
                     fill="x", pady=2, padx=2
                 )
+        self.trajet_scroll.scroll_to_top()

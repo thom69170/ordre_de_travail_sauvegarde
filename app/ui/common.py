@@ -57,26 +57,34 @@ class ScrollableFrame(ttk.Frame):
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
-        canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0, background=BG)
-        vscroll = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        self.inner = ttk.Frame(canvas)
+        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0, background=BG)
+        vscroll = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas)
 
         self.inner.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            "<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
-        window_id = canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        canvas.bind(
-            "<Configure>", lambda e: canvas.itemconfig(window_id, width=e.width)
+        window_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.bind(
+            "<Configure>", lambda e: self.canvas.itemconfig(window_id, width=e.width)
         )
-        canvas.configure(yscrollcommand=vscroll.set)
+        self.canvas.configure(yscrollcommand=vscroll.set)
 
-        canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.pack(side="left", fill="both", expand=True)
         vscroll.pack(side="right", fill="y")
 
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel, add="+")
+
+    def scroll_to_top(self) -> None:
+        """À appeler après avoir remplacé le contenu (ex: changement de filtre) : sans ça,
+        le canvas garde son ancienne région/position de défilement, ce qui peut laisser le
+        nouveau contenu (plus court) coincé tout en bas d'un grand espace vide."""
+        self.inner.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.canvas.yview_moveto(0)
 
 
 def show_warnings(parent, warnings: list[str]) -> ttk.Frame | None:
