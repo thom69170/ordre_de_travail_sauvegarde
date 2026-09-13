@@ -99,7 +99,6 @@ class ImportTab(ttk.Frame):
         ttk.Label(left, text="Aperçu (vérifie les valeurs par rapport à la photo)",
                   font=("Segoe UI", 9, "bold")).pack(anchor="w")
         self.thumb_label = tk.Label(left, bg=CARD_BG, relief="solid", borderwidth=1)
-        self.thumb_label.pack(pady=6)
         self.open_file_btn = ttk.Button(left, text="Ouvrir le fichier original", command=self._open_source_file,
                                          state="disabled")
         self.open_file_btn.pack(anchor="w")
@@ -314,6 +313,7 @@ class ImportTab(ttk.Frame):
         thumb = image.resize((max_w, int(image.height * ratio)), Image.LANCZOS)
         self._thumbnail_imgtk = ImageTk.PhotoImage(thumb)
         self.thumb_label.config(image=self._thumbnail_imgtk)
+        self.thumb_label.pack(pady=6, before=self.open_file_btn)
 
     def _open_source_file(self):
         if self.current_path and self.current_path.exists():
@@ -387,6 +387,7 @@ class ImportTab(ttk.Frame):
         self.current_pages = None
         self._thumbnail_imgtk = None
         self.thumb_label.config(image="")
+        self.thumb_label.pack_forget()
         self.open_file_btn.config(state="disabled")
         if not keep_file_dialog_open:
             self.file_label.config(text="Aucun fichier sélectionné")
