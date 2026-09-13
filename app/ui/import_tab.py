@@ -84,8 +84,13 @@ class ImportTab(ttk.Frame):
         self.file_label = ttk.Label(top, text="Aucun fichier sélectionné", foreground=TEXT_MUTED)
         self.file_label.pack(side="left", padx=10)
 
-        self.status_label = ttk.Label(top, text="", foreground=ACCENT)
+        self.status_label = ttk.Label(top, text="", foreground=ACCENT, font=("Segoe UI", 10, "bold"))
         self.status_label.pack(side="right")
+
+        # Barre de progression indéterminée : masquée par défaut, affichée uniquement pendant
+        # l'analyse (voir _set_processing) pour que ce soit visuellement évident qu'il se passe
+        # quelque chose, même pour quelqu'un qui ne remarquerait pas le petit texte de statut.
+        self.progress = ttk.Progressbar(self, mode="indeterminate")
 
         self.banner_holder = ttk.Frame(self)
         self.banner_holder.pack(fill="x")
@@ -229,9 +234,7 @@ class ImportTab(ttk.Frame):
         path = Path(path_str)
         self.current_path = path
         self.file_label.config(text=path.name)
-        self.status_label.config(text="Analyse en cours...")
-        self.choose_btn.config(state="disabled")
-        self.update_idletasks()
+        self._set_processing(True)
         threading.Thread(target=self._process_file, args=(path,), daemon=True).start()
 
     def _open_phone_upload_dialog(self):
@@ -243,10 +246,23 @@ class ImportTab(ttk.Frame):
         self.reset_form(keep_file_dialog_open=True)
         self.current_path = path
         self.file_label.config(text=f"{path.name} (reçu du téléphone)")
-        self.status_label.config(text="Analyse en cours...")
-        self.choose_btn.config(state="disabled")
-        self.update_idletasks()
+        self._set_processing(True)
         threading.Thread(target=self._process_file, args=(path,), daemon=True).start()
+
+    def _set_processing(self, active: bool):
+        """Rend l'analyse en cours difficile à manquer (barre de progression animée + texte en
+        gras) plutôt qu'un simple petit texte de statut facile à ne pas remarquer."""
+        self.choose_btn.config(state="disabled" if active else "normal")
+        self.phone_btn.config(state="disabled" if active else "normal")
+        if active:
+            self.status_label.config(text="⏳ Analyse de l'ordre de travail en cours...")
+            self.progress.pack(fill="x", before=self.banner_holder)
+            self.progress.start(12)
+        else:
+            self.progress.stop()
+            self.progress.pack_forget()
+            self.status_label.config(text="")
+        self.update_idletasks()
 
     def _process_file(self, path: Path):
         try:
@@ -265,13 +281,11 @@ class ImportTab(ttk.Frame):
         self.after(0, lambda: self._apply_extraction(pages, extraction))
 
     def _on_process_error(self, exc: Exception):
-        self.choose_btn.config(state="normal")
-        self.status_label.config(text="")
+        self._set_processing(False)
         messagebox.showerror("Erreur", f"Impossible de lire ce fichier :\n{exc}")
 
     def _apply_extraction(self, pages: list[Image.Image], extraction):
-        self.choose_btn.config(state="normal")
-        self.status_label.config(text="")
+        self._set_processing(False)
         self.current_pages = pages
         self._show_thumbnail(pages[0])
         self.open_file_btn.config(state="normal")

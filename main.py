@@ -60,7 +60,13 @@ def main() -> int:
 
     root = tk.Tk()
     root.title(APP_TITLE)
-    root.geometry("1200x800")
+    # Position explicite (centree sur l'ecran principal) plutot que de laisser Windows choisir :
+    # certaines configurations (ecran secondaire deconnecte, "emplacement de fenetre memorise"
+    # par bureau virtuel...) peuvent sinon rouvrir la fenetre partiellement hors de l'ecran.
+    width, height = 1200, 800
+    x = max(0, (root.winfo_screenwidth() - width) // 2)
+    y = max(0, (root.winfo_screenheight() - height) // 2)
+    root.geometry(f"{width}x{height}+{x}+{y}")
     root.minsize(980, 640)
 
     icon = icon_path()
