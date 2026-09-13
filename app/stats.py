@@ -33,10 +33,12 @@ def _iso_week_key(d: date) -> tuple[str, str]:
     return f"{year}-W{week:02d}", f"Semaine {week:02d} / {year}"
 
 
+FRENCH_MONTHS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet",
+                  "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+
+
 def _month_key(d: date) -> tuple[str, str]:
-    months = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
-              "août", "septembre", "octobre", "novembre", "décembre"]
-    return f"{d.year}-{d.month:02d}", f"{months[d.month - 1].capitalize()} {d.year}"
+    return f"{d.year}-{d.month:02d}", f"{FRENCH_MONTHS[d.month - 1]} {d.year}"
 
 
 def _year_key(d: date) -> tuple[str, str]:

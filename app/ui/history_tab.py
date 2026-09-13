@@ -6,7 +6,7 @@ from datetime import date
 from tkinter import messagebox, ttk
 
 from app import db, storage
-from app.stats import hours_to_hm
+from app.stats import FRENCH_MONTHS, hours_to_hm
 
 ALL_MONTHS = "Tous les mois"
 
@@ -32,7 +32,7 @@ class HistoryTab(ttk.Frame):
         self.month_var = tk.StringVar(value=ALL_MONTHS)
         self.month_combo = ttk.Combobox(
             top, textvariable=self.month_var, width=14, state="readonly",
-            values=[ALL_MONTHS] + [date(2000, m, 1).strftime("%B").capitalize() for m in range(1, 13)],
+            values=[ALL_MONTHS] + FRENCH_MONTHS,
         )
         self.month_combo.pack(side="left", padx=4)
         self.month_combo.bind("<<ComboboxSelected>>", lambda e: self.refresh())
@@ -72,9 +72,7 @@ class HistoryTab(ttk.Frame):
         if self.year_var.get() != "Toutes":
             year = self.year_var.get()
             if self.month_var.get() != ALL_MONTHS:
-                month = [date(2000, m, 1).strftime("%B").capitalize() for m in range(1, 13)].index(
-                    self.month_var.get()
-                ) + 1
+                month = FRENCH_MONTHS.index(self.month_var.get()) + 1
                 start_date = f"{year}-{month:02d}-01"
                 end_date = f"{year}-{month:02d}-31"
             else:
