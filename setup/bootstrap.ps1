@@ -87,10 +87,28 @@ if (-not $basePython) {
 Write-Host "Python de base : $basePython"
 
 # 3) Environnement virtuel dedie a l'application (isole des autres usages de ce Python).
+# Reessaie plusieurs fois : un antivirus qui scanne les .exe fraichement crees provoque parfois
+# une erreur "Permission denied" transitoire des le premier essai, qui disparait au second.
 Write-Host "Creation de l'environnement de l'application..."
-& $basePython -m venv $VenvDir
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPython)) {
-    Write-Error "La creation de l'environnement virtuel a echoue."
+$venvCreated = $false
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    if (Test-Path $VenvDir) {
+        Remove-Item -Recurse -Force $VenvDir -ErrorAction SilentlyContinue
+    }
+    & $basePython -m venv $VenvDir
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $VenvPython)) {
+        $venvCreated = $true
+        break
+    }
+    if ($attempt -lt 3) {
+        Write-Host "Echec de la creation de l'environnement (tentative $attempt/3) - nouvel essai..."
+        Start-Sleep -Seconds 3
+    }
+}
+if (-not $venvCreated) {
+    Write-Error ("La creation de l'environnement virtuel a echoue apres plusieurs tentatives. " +
+        "C'est souvent un antivirus qui bloque temporairement l'ecriture dans $RuntimeDir : " +
+        "verifie qu'aucune protection ne le bloque, puis relance Ordres de travail.bat.")
     exit 1
 }
 

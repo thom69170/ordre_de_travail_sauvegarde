@@ -23,6 +23,12 @@ statistiques par semaine / mois / année.
      `%LOCALAPPDATA%\OrdreDeTravail\runtime\` — compte 1 à 2 minutes, connexion internet
      nécessaire. Rien de tout ça n'est mélangé avec un Python que tu aurais déjà sur ta machine
      (environnement dédié à l'app, isolé).
+   - **Si l'installation automatique échoue avec "Permission denied" / "La création de
+     l'environnement virtuel a échoué"** : c'est généralement un antivirus qui bloque
+     temporairement l'écriture des fichiers fraîchement créés dans
+     `%LOCALAPPDATA%\OrdreDeTravail\`. Le script réessaie déjà automatiquement plusieurs fois ;
+     si ça échoue quand même, vérifie qu'aucun antivirus ne bloque ce dossier, puis relance
+     `Ordres de travail.bat`.
    - **Lancements suivants** : instantané, tout est déjà en place.
    - Un `.bat` n'ayant pas d'icône propre, un raccourci **« Ordres de travail »** (avec l'icône
      de l'app) est créé automatiquement **sur le Bureau** au premier lancement, quel que soit

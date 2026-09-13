@@ -49,17 +49,22 @@ class HistoryTab(ttk.Frame):
         for col in columns:
             self.tree.heading(col, text=headings[col])
             self.tree.column(col, width=widths[col], anchor="w")
-        self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         self.tree.bind("<Double-1>", lambda e: self.edit_selected())
 
+        # Empaquetée avant le tableau (avec side="bottom") pour garder cette barre toujours
+        # visible, même quand la liste ne tient pas dans la fenêtre (petit écran, ou mise à
+        # l'échelle Windows élevée) : sinon le tableau (fill="both", expand=True) prend toute la
+        # place disponible en premier et repousse ces boutons hors de la fenêtre.
         bottom = ttk.Frame(self, padding=(12, 0, 12, 12))
-        bottom.pack(fill="x")
+        bottom.pack(side="bottom", fill="x")
         ttk.Button(bottom, text="Modifier", command=self.edit_selected).pack(side="left")
         ttk.Button(bottom, text="Ouvrir le fichier source", command=self.open_selected_file).pack(side="left", padx=8)
         ttk.Button(bottom, text="Supprimer", command=self.delete_selected).pack(side="left")
 
         self.summary_label = ttk.Label(bottom, text="", font=("Segoe UI", 9, "bold"))
         self.summary_label.pack(side="right")
+
+        self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
     def refresh(self):
         all_orders = db.list_work_orders()
