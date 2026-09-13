@@ -192,7 +192,7 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
 
 - `app/db.py` — stockage SQLite (base `ordres.db`)
 - `app/ocr_engine.py` — rendu des PDF/photos en image + appel à Tesseract
-- `app/parser.py` — extraction (date, chauffeur, récapitulatif, trajets) depuis le texte OCR
+- `app/parser.py` — extraction (date, conducteur, récapitulatif, trajets) depuis le texte OCR
 - `app/gemini_engine.py` — extraction équivalente via l'API Gemini (si une clé est configurée)
 - `app/extraction.py` — choisit Gemini ou Tesseract, avec repli automatique sur Tesseract
 - `app/config.py` — configuration locale (clé API Gemini)

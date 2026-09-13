@@ -21,8 +21,8 @@ MODEL_NAME = "gemini-3.5-flash-lite"
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 TIMEOUT_SECONDS = 60
 
-PROMPT = """Tu analyses un "ordre de travail" (feuille de route) d'un chauffeur de bus/car en France.
-Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique le nom du chauffeur,
+PROMPT = """Tu analyses un "ordre de travail" (feuille de route) d'un conducteur de bus/car en France.
+Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique le nom du conducteur,
 son matricule (nombre) et la date du jour (ex: "Jeudi 16 JUILLET 2026"). Le corps liste les
 services de la journée, un service par bloc de lignes ; parmi eux, certains blocs (souvent
 identifiés par un code du type "164TATA1520 (164LVH...") contiennent un trajet du type

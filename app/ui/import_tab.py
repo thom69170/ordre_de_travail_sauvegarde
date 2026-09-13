@@ -117,7 +117,7 @@ class ImportTab(ttk.Frame):
         self.date_entry.pack(side="left", padx=(0, 10))
         self.date_entry.set(date.today().strftime("%d/%m/%Y"))
 
-        self.name_entry = LabeledEntry(header, "Nom du chauffeur", width=24)
+        self.name_entry = LabeledEntry(header, "Nom du conducteur", width=24)
         self.name_entry.pack(side="left", padx=(0, 10))
 
         self.matricule_entry = LabeledEntry(header, "Matricule", width=10)

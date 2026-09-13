@@ -39,13 +39,13 @@ class HistoryTab(ttk.Frame):
 
         ttk.Button(top, text="Actualiser", command=self.refresh).pack(side="left", padx=12)
 
-        columns = ("date", "chauffeur", "tps", "tte", "ampli", "trajets")
+        columns = ("date", "conducteur", "tps", "tte", "ampli", "trajets")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
         headings = {
-            "date": "Date", "chauffeur": "Chauffeur", "tps": "TPS",
+            "date": "Date", "conducteur": "Conducteur", "tps": "TPS",
             "tte": "TTE (travail)", "ampli": "Amplitude", "trajets": "Trajets",
         }
-        widths = {"date": 110, "chauffeur": 200, "tps": 90, "tte": 110, "ampli": 100, "trajets": 300}
+        widths = {"date": 110, "conducteur": 200, "tps": 90, "tte": 110, "ampli": 100, "trajets": 300}
         for col in columns:
             self.tree.heading(col, text=headings[col])
             self.tree.column(col, width=widths[col], anchor="w")
