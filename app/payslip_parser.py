@@ -20,6 +20,7 @@ class PayslipData:
     hs_50: float = 0.0
     cumul_hs_25: float = 0.0
     cumul_hs_50: float = 0.0
+    repos_differe: float = 0.0  # "Solde repos différés" (combien on en a actuellement)
     # Tous les autres champs du "Récapitulatif mensuel" (ex: Jours travaillés, TTE, Repos,
     # Repos différé acquis...) et des "Compteurs" (ex: Cumul TTE annuel, Solde H. RC nuit...),
     # tels quels avec le libellé exact du document - pas seulement les heures sup.
@@ -32,6 +33,7 @@ _PERIOD_PATTERN = re.compile(r"##(\d{4}-\d{2}-\d{2})##(\d{4}-\d{2}-\d{2})##")
 _NUMBER_LINE = re.compile(r"^\d+[.,]\d{2}$")
 _HS25_LABEL = re.compile(r"HS\s*1?25\s*%", re.IGNORECASE)
 _HS50_LABEL = re.compile(r"HS\s*1?50\s*%", re.IGNORECASE)
+_REPOS_DIFFERE_LABEL = re.compile(r"Solde\s+repos\s+diff[ée]r[ée]s?", re.IGNORECASE)
 
 
 def _extract_all_text(path: Path) -> str:
@@ -104,6 +106,7 @@ def extract_payslip(path: Path) -> PayslipData:
     result.hs_50 = _find_value(recap, _HS50_LABEL)
     result.cumul_hs_25 = _find_value(compteurs, _HS25_LABEL)
     result.cumul_hs_50 = _find_value(compteurs, _HS50_LABEL)
+    result.repos_differe = _find_value(compteurs, _REPOS_DIFFERE_LABEL)
     result.recap = recap
     result.compteurs = compteurs
 

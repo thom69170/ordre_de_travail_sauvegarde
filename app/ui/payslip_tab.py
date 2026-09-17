@@ -94,6 +94,9 @@ class PayslipTab(ttk.Frame):
 
         row2 = ttk.Frame(form)
         row2.pack(fill="x")
+        self.reposdiffere_entry = LabeledEntry(row2, "Repos différé (solde)", width=10)
+        self.reposdiffere_entry.set_decimal(0.0)
+        self.reposdiffere_entry.pack(side="left", padx=(0, 20))
         self.hs25_entry = LabeledEntry(row2, "HS 25% (ce mois)", width=10)
         self.hs25_entry.set_decimal(0.0)
         self.hs25_entry.pack(side="left", padx=(0, 10))
@@ -114,13 +117,16 @@ class PayslipTab(ttk.Frame):
         self.warnings_holder = ttk.Frame(self)
         self.warnings_holder.pack(fill="x", padx=12)
 
-        columns = ("periode", "hs25", "hs50", "cumul25", "cumul50")
+        columns = ("periode", "reposdiffere", "hs25", "hs50", "cumul25", "cumul50")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
         headings = {
-            "periode": "Période", "hs25": "HS 25%", "hs50": "HS 50%",
-            "cumul25": "Cumul annuel 25%", "cumul50": "Cumul annuel 50%",
+            "periode": "Période", "reposdiffere": "Repos différé", "hs25": "HS 25%",
+            "hs50": "HS 50%", "cumul25": "Cumul annuel 25%", "cumul50": "Cumul annuel 50%",
         }
-        widths = {"periode": 220, "hs25": 90, "hs50": 90, "cumul25": 130, "cumul50": 130}
+        widths = {
+            "periode": 220, "reposdiffere": 110, "hs25": 90, "hs50": 90,
+            "cumul25": 130, "cumul50": 130,
+        }
         for col in columns:
             self.tree.heading(col, text=headings[col])
             self.tree.column(col, width=widths[col], anchor="w")
@@ -176,6 +182,7 @@ class PayslipTab(ttk.Frame):
         self.file_label.config(text=path.name)
         self.start_entry.set(_fmt_date(result.period_start))
         self.end_entry.set(_fmt_date(result.period_end))
+        self.reposdiffere_entry.set_decimal(result.repos_differe)
         self.hs25_entry.set_decimal(result.hs_25)
         self.hs50_entry.set_decimal(result.hs_50)
         self.cumul25_entry.set_decimal(result.cumul_hs_25)
@@ -232,6 +239,7 @@ class PayslipTab(ttk.Frame):
         )
         self.start_entry.set(_fmt_date(p.period_start))
         self.end_entry.set(_fmt_date(p.period_end))
+        self.reposdiffere_entry.set_decimal(p.repos_differe)
         self.hs25_entry.set_decimal(p.hs_25)
         self.hs50_entry.set_decimal(p.hs_50)
         self.cumul25_entry.set_decimal(p.cumul_hs_25)
@@ -274,6 +282,7 @@ class PayslipTab(ttk.Frame):
             self.file_label.config(text="Aucun fichier sélectionné")
         self.start_entry.set("")
         self.end_entry.set("")
+        self.reposdiffere_entry.set_decimal(0.0)
         self.hs25_entry.set_decimal(0.0)
         self.hs50_entry.set_decimal(0.0)
         self.cumul25_entry.set_decimal(0.0)
@@ -314,6 +323,7 @@ class PayslipTab(ttk.Frame):
             hs_50=self.hs50_entry.get_decimal(),
             cumul_hs_25=self.cumul25_entry.get_decimal(),
             cumul_hs_50=self.cumul50_entry.get_decimal(),
+            repos_differe=self.reposdiffere_entry.get_decimal(),
             details_json=self.current_details_json,
         )
 
@@ -385,6 +395,7 @@ class PayslipTab(ttk.Frame):
         for p in db.list_payslips():
             periode = f"{_fmt_date(p.period_start)} — {_fmt_date(p.period_end)}"
             self.tree.insert("", "end", iid=str(p.id), values=(
-                periode, format_decimal(p.hs_25), format_decimal(p.hs_50),
-                format_decimal(p.cumul_hs_25), format_decimal(p.cumul_hs_50),
+                periode, format_decimal(p.repos_differe), format_decimal(p.hs_25),
+                format_decimal(p.hs_50), format_decimal(p.cumul_hs_25),
+                format_decimal(p.cumul_hs_50),
             ))

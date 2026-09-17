@@ -92,6 +92,7 @@ class Payslip:
     hs_50: float = 0.0
     cumul_hs_25: float = 0.0
     cumul_hs_50: float = 0.0
+    repos_differe: float = 0.0  # "Solde repos différés"
     source_filename: str = ""
     created_at: str = ""
     # Tous les autres champs lus sur le document (JSON : {"recap": {...}, "compteurs": {...}}),

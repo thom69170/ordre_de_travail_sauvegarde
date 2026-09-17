@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS payslips (
     hs_50 REAL DEFAULT 0,
     cumul_hs_25 REAL DEFAULT 0,
     cumul_hs_50 REAL DEFAULT 0,
+    repos_differe REAL DEFAULT 0,
     source_filename TEXT DEFAULT '',
     created_at TEXT NOT NULL,
     details_json TEXT DEFAULT ''
@@ -91,6 +92,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     existing_payslip_cols = {row["name"] for row in conn.execute("PRAGMA table_info(payslips)").fetchall()}
     if "details_json" not in existing_payslip_cols:
         conn.execute("ALTER TABLE payslips ADD COLUMN details_json TEXT DEFAULT ''")
+    if "repos_differe" not in existing_payslip_cols:
+        conn.execute("ALTER TABLE payslips ADD COLUMN repos_differe REAL DEFAULT 0")
 
 
 def init_db() -> None:
@@ -242,7 +245,7 @@ def _row_to_payslip(row: sqlite3.Row) -> Payslip:
 def insert_payslip(p: Payslip) -> int:
     with connect() as conn:
         cols = ["period_start", "period_end", "hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50",
-                "source_filename", "created_at", "details_json"]
+                "repos_differe", "source_filename", "created_at", "details_json"]
         values = [getattr(p, c) for c in cols]
         if not p.created_at:
             values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
@@ -258,7 +261,7 @@ def update_payslip(p: Payslip) -> None:
         raise ValueError("payslip without id cannot be updated")
     with connect() as conn:
         cols = ["period_start", "period_end", "hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50",
-                "source_filename", "details_json"]
+                "repos_differe", "source_filename", "details_json"]
         assignments = ", ".join(f"{c} = ?" for c in cols)
         values = [getattr(p, c) for c in cols] + [p.id]
         conn.execute(f"UPDATE payslips SET {assignments} WHERE id = ?", values)
