@@ -13,7 +13,7 @@ from PIL import Image, ImageTk
 
 from app import config, db, ocr_engine, storage
 from app.extraction import extract_from_pages as run_extraction
-from app.models import SUMMARY_FIELDS, WorkOrder, format_trajet
+from app.models import SUMMARY_FIELDS, WorkOrder, format_trajet, split_trajet
 from app.ui.common import (
     ACCENT,
     BG,
@@ -62,6 +62,7 @@ class ImportTab(ttk.Frame):
         self.current_pages: list[Image.Image] | None = None
         self.editing_id: int | None = None
         self._thumbnail_imgtk = None
+        self._editing_trajet_index: int | None = None
         self.summary_entries: dict[str, LabeledEntry] = {}
 
         self._build_ui()
@@ -128,9 +129,14 @@ class ImportTab(ttk.Frame):
         self.matricule_entry = LabeledEntry(header, "Matricule", width=10)
         self.matricule_entry.pack(side="left")
 
-        ttk.Button(header, text="Réinitialiser le formulaire", command=self.reset_form).pack(
-            side="left", padx=(20, 6)
+        # Affiché uniquement en mode édition (un OT existant a été ouvert depuis l'Historique) :
+        # voir load_for_edit/reset_form pour l'affichage/masquage.
+        self.back_btn = ttk.Button(
+            header, text="← Retour à l'historique", command=self._back_to_history
         )
+
+        self.reset_btn = ttk.Button(header, text="Réinitialiser le formulaire", command=self.reset_form)
+        self.reset_btn.pack(side="left", padx=(20, 6))
         self.save_btn = ttk.Button(header, text="Enregistrer", command=self.save)
         self.save_btn.pack(side="left")
 
@@ -151,6 +157,7 @@ class ImportTab(ttk.Frame):
         listbox_row.pack(fill="x", side="top")
         self.trajet_listbox = tk.Listbox(listbox_row, height=8, selectmode="extended")
         self.trajet_listbox.pack(side="left", fill="both", expand=True)
+        self.trajet_listbox.bind("<Double-Button-1>", self._edit_selected_trajet)
         trajet_scroll = ttk.Scrollbar(listbox_row, orient="vertical", command=self.trajet_listbox.yview)
         trajet_scroll.pack(side="left", fill="y")
         self.trajet_listbox.config(yscrollcommand=trajet_scroll.set)
@@ -164,8 +171,13 @@ class ImportTab(ttk.Frame):
         self.ligne_combo.pack(side="left", padx=(4, 10))
         self.new_trajet_var = tk.StringVar()
         ttk.Entry(add_row, textvariable=self.new_trajet_var).pack(side="left", fill="x", expand=True)
-        ttk.Button(add_row, text="Ajouter", command=self._add_trajet).pack(side="left", padx=4)
+        self.add_trajet_btn = ttk.Button(add_row, text="Ajouter", command=self._add_trajet)
+        self.add_trajet_btn.pack(side="left", padx=4)
         ttk.Button(add_row, text="Supprimer la sélection", command=self._remove_selected_trajets).pack(side="left")
+        ttk.Label(
+            trajets_frame, text="Double-clique sur un trajet pour modifier son numéro de ligne.",
+            foreground=TEXT_MUTED,
+        ).pack(anchor="w", pady=(4, 0))
 
         self.warnings_holder = ttk.Frame(form)
         self.warnings_holder.pack(fill="x", padx=4)
@@ -359,7 +371,15 @@ class ImportTab(ttk.Frame):
         if not label:
             return
         ligne = self.ligne_var.get().strip()
-        self.trajet_listbox.insert("end", format_trajet(ligne, label))
+        combined = format_trajet(ligne, label)
+        if self._editing_trajet_index is not None:
+            idx = self._editing_trajet_index
+            self.trajet_listbox.delete(idx)
+            self.trajet_listbox.insert(idx, combined)
+            self._editing_trajet_index = None
+            self.add_trajet_btn.config(text="Ajouter")
+        else:
+            self.trajet_listbox.insert("end", combined)
         self.new_trajet_var.set("")
         # Le numéro de ligne n'est pas effacé : on enchaîne souvent plusieurs trajets de la
         # même ligne. On le mémorise pour l'autocomplétion (aujourd'hui et les prochains jours).
@@ -367,20 +387,42 @@ class ImportTab(ttk.Frame):
             self.ligne_combo["values"] = (*self.ligne_combo["values"], ligne)
         self._update_trajets_count()
 
+    def _edit_selected_trajet(self, event=None):
+        sel = self.trajet_listbox.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        ligne, label = split_trajet(self.trajet_listbox.get(idx))
+        self.ligne_var.set(ligne)
+        self.new_trajet_var.set(label)
+        self._editing_trajet_index = idx
+        self.add_trajet_btn.config(text="Mettre à jour ce trajet")
+
     def _remove_selected_trajets(self):
         for idx in reversed(self.trajet_listbox.curselection()):
             self.trajet_listbox.delete(idx)
+        if self._editing_trajet_index is not None:
+            # Les index restants ont pu se décaler : plus simple d'annuler l'édition en cours
+            # que de risquer de mettre à jour le mauvais trajet ensuite.
+            self._editing_trajet_index = None
+            self.new_trajet_var.set("")
+            self.add_trajet_btn.config(text="Ajouter")
         self._update_trajets_count()
 
     def _update_trajets_count(self):
         count = self.trajet_listbox.size()
         self.trajets_count_label.config(text=f"{count} trajet{'s' if count != 1 else ''}")
 
+    def _back_to_history(self):
+        self.reset_form()
+        self.app.select_tab("history")
+
     def load_for_edit(self, work_order: WorkOrder):
         self.reset_form()
         self.editing_id = work_order.id
         self.current_path = None
         self.file_label.config(text=f"(fichier existant : {work_order.source_filename or 'aucun'})")
+        self.back_btn.pack(side="left", padx=(20, 6), before=self.reset_btn)
 
         self.date_entry.set(date.fromisoformat(work_order.date).strftime("%d/%m/%Y"))
         self.name_entry.set(work_order.driver_name)
@@ -424,11 +466,14 @@ class ImportTab(ttk.Frame):
             entry.set_decimal(0.0)
         self.trajet_listbox.delete(0, "end")
         self.ligne_var.set("")
+        self._editing_trajet_index = None
+        self.add_trajet_btn.config(text="Ajouter")
         self._update_trajets_count()
         self.notes_text.delete("1.0", "end")
         for child in self.warnings_holder.winfo_children():
             child.destroy()
         self.save_btn.config(text="Enregistrer")
+        self.back_btn.pack_forget()
         self._maybe_show_ocr_banner()
 
     def save(self):
