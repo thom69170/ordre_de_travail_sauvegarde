@@ -6,7 +6,7 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from app.models import SUMMARY_FIELD_NAMES, WorkOrder
+from app.models import SUMMARY_FIELD_NAMES, WorkOrder, split_trajet
 from app.paths import db_path
 
 SCHEMA = """
@@ -142,6 +142,16 @@ def get_work_order_by_date(date: str) -> WorkOrder | None:
         if row is None:
             return None
     return get_work_order(row["id"])
+
+
+def list_known_lignes() -> list[str]:
+    """Numéros de ligne déjà utilisés (pour l'autocomplétion dans l'onglet Importer), dérivés
+    des trajets déjà enregistrés - pas besoin de table/colonne dédiée."""
+    with connect() as conn:
+        rows = conn.execute("SELECT DISTINCT label FROM trajets").fetchall()
+    lignes = {split_trajet(r["label"])[0] for r in rows}
+    lignes.discard("")
+    return sorted(lignes)
 
 
 def list_work_orders(start_date: str | None = None, end_date: str | None = None) -> list[WorkOrder]:

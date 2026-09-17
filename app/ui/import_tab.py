@@ -13,7 +13,7 @@ from PIL import Image, ImageTk
 
 from app import config, db, ocr_engine, storage
 from app.extraction import extract_from_pages as run_extraction
-from app.models import SUMMARY_FIELDS, WorkOrder
+from app.models import SUMMARY_FIELDS, WorkOrder, format_trajet
 from app.ui.common import (
     ACCENT,
     BG,
@@ -156,6 +156,12 @@ class ImportTab(ttk.Frame):
         self.trajet_listbox.config(yscrollcommand=trajet_scroll.set)
         add_row = ttk.Frame(trajets_frame)
         add_row.pack(fill="x", pady=(6, 0))
+        ttk.Label(add_row, text="Ligne :").pack(side="left")
+        self.ligne_var = tk.StringVar()
+        self.ligne_combo = ttk.Combobox(
+            add_row, textvariable=self.ligne_var, width=8, values=db.list_known_lignes()
+        )
+        self.ligne_combo.pack(side="left", padx=(4, 10))
         self.new_trajet_var = tk.StringVar()
         ttk.Entry(add_row, textvariable=self.new_trajet_var).pack(side="left", fill="x", expand=True)
         ttk.Button(add_row, text="Ajouter", command=self._add_trajet).pack(side="left", padx=4)
@@ -350,10 +356,16 @@ class ImportTab(ttk.Frame):
 
     def _add_trajet(self):
         label = self.new_trajet_var.get().strip()
-        if label:
-            self.trajet_listbox.insert("end", label)
-            self.new_trajet_var.set("")
-            self._update_trajets_count()
+        if not label:
+            return
+        ligne = self.ligne_var.get().strip()
+        self.trajet_listbox.insert("end", format_trajet(ligne, label))
+        self.new_trajet_var.set("")
+        # Le numéro de ligne n'est pas effacé : on enchaîne souvent plusieurs trajets de la
+        # même ligne. On le mémorise pour l'autocomplétion (aujourd'hui et les prochains jours).
+        if ligne and ligne not in self.ligne_combo["values"]:
+            self.ligne_combo["values"] = (*self.ligne_combo["values"], ligne)
+        self._update_trajets_count()
 
     def _remove_selected_trajets(self):
         for idx in reversed(self.trajet_listbox.curselection()):
@@ -411,6 +423,7 @@ class ImportTab(ttk.Frame):
         for entry in self.summary_entries.values():
             entry.set_decimal(0.0)
         self.trajet_listbox.delete(0, "end")
+        self.ligne_var.set("")
         self._update_trajets_count()
         self.notes_text.delete("1.0", "end")
         for child in self.warnings_holder.winfo_children():

@@ -26,6 +26,29 @@ SUMMARY_FIELDS = [
 
 SUMMARY_FIELD_NAMES = [f[0] for f in SUMMARY_FIELDS]
 
+# Séparateur utilisé pour stocker le numéro de ligne (facultatif) avec le libellé du trajet
+# dans un seul champ texte ("164 — CHARMILLES / TARARE GARE") : évite une migration de la base
+# pour les installations déjà en place, tout en restant lisible et facile à reparser.
+TRAJET_LIGNE_SEPARATOR = " — "
+
+
+def format_trajet(ligne: str, label: str) -> str:
+    """Combine un numéro de ligne (facultatif) et un libellé de trajet en une seule chaîne."""
+    ligne = (ligne or "").strip()
+    label = (label or "").strip()
+    if ligne:
+        return f"{ligne}{TRAJET_LIGNE_SEPARATOR}{label}"
+    return label
+
+
+def split_trajet(trajet: str) -> tuple[str, str]:
+    """Retourne (numéro_de_ligne, libellé) à partir d'un trajet stocké - ligne vide si absente
+    (ex: trajets détectés par OCR, qui ne contiennent jamais de numéro de ligne)."""
+    if TRAJET_LIGNE_SEPARATOR in trajet:
+        ligne, label = trajet.split(TRAJET_LIGNE_SEPARATOR, 1)
+        return ligne.strip(), label.strip()
+    return "", trajet.strip()
+
 
 @dataclass
 class WorkOrder:

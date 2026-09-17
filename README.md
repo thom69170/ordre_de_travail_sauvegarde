@@ -45,6 +45,10 @@ statistiques par semaine / mois / année.
      reçue est traitée automatiquement, comme si elle avait été importée depuis le PC. Windows
      peut demander une autorisation de pare-feu la première fois (à accepter, sinon le téléphone
      ne peut pas joindre le PC).
+   - **Numéro de ligne** : en plus du trajet détecté (ex: "CHARMILLES / TARARE GARE"), tu peux
+     associer un numéro de ligne (ex: "164") à chaque trajet ajouté manuellement — pratique
+     quand tu fais plusieurs lignes différentes le même jour. Les numéros déjà utilisés sont
+     proposés automatiquement (pas besoin de les retaper à chaque fois).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
