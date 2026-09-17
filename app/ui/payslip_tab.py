@@ -2,8 +2,10 @@
 prépaie (jamais recalculées par l'app - voir app/payslip_parser.py)."""
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
+import tkinter as tk
 from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -54,6 +56,7 @@ class PayslipTab(ttk.Frame):
         super().__init__(parent)
         self.app = app
         self.current_path: Path | None = None
+        self.current_details_json: str = ""
         self.editing_id: int | None = None
         self._build_ui()
         self.refresh()
@@ -102,7 +105,11 @@ class PayslipTab(ttk.Frame):
         self.cumul25_entry.pack(side="left", padx=(0, 10))
         self.cumul50_entry = LabeledEntry(row2, "Cumul annuel HS 50%", width=10)
         self.cumul50_entry.set_decimal(0.0)
-        self.cumul50_entry.pack(side="left")
+        self.cumul50_entry.pack(side="left", padx=(0, 20))
+        self.details_btn = ttk.Button(
+            row2, text="Voir tous les détails...", command=self._show_details_dialog
+        )
+        self.details_btn.pack(side="left")
 
         self.warnings_holder = ttk.Frame(self)
         self.warnings_holder.pack(fill="x", padx=12)
@@ -173,6 +180,10 @@ class PayslipTab(ttk.Frame):
         self.hs50_entry.set_decimal(result.hs_50)
         self.cumul25_entry.set_decimal(result.cumul_hs_25)
         self.cumul50_entry.set_decimal(result.cumul_hs_50)
+        if result.recap or result.compteurs:
+            self.current_details_json = json.dumps(
+                {"recap": result.recap, "compteurs": result.compteurs}, ensure_ascii=False
+            )
 
         for child in self.warnings_holder.winfo_children():
             child.destroy()
@@ -225,6 +236,7 @@ class PayslipTab(ttk.Frame):
         self.hs50_entry.set_decimal(p.hs_50)
         self.cumul25_entry.set_decimal(p.cumul_hs_25)
         self.cumul50_entry.set_decimal(p.cumul_hs_50)
+        self.current_details_json = p.details_json
         self.save_btn.config(text="Mettre à jour")
         self.back_btn.pack(side="left", padx=(0, 6), before=self.reset_btn)
 
@@ -257,6 +269,7 @@ class PayslipTab(ttk.Frame):
     def reset_form(self, keep_file_dialog_open: bool = False):
         self.editing_id = None
         self.current_path = None
+        self.current_details_json = ""
         if not keep_file_dialog_open:
             self.file_label.config(text="Aucun fichier sélectionné")
         self.start_entry.set("")
@@ -301,6 +314,7 @@ class PayslipTab(ttk.Frame):
             hs_50=self.hs50_entry.get_decimal(),
             cumul_hs_25=self.cumul25_entry.get_decimal(),
             cumul_hs_50=self.cumul50_entry.get_decimal(),
+            details_json=self.current_details_json,
         )
 
         if self.current_path is not None:
@@ -318,6 +332,52 @@ class PayslipTab(ttk.Frame):
         messagebox.showinfo("Enregistré", f"Relevé du {_fmt_date(start_iso)} enregistré.")
         self.reset_form()
         self.refresh()
+
+    def _show_details_dialog(self):
+        if not self.current_details_json:
+            messagebox.showinfo(
+                "Aucun détail",
+                "Aucun détail disponible pour ce relevé (importe/sélectionne d'abord une "
+                "feuille de prépaie).",
+            )
+            return
+        try:
+            details = json.loads(self.current_details_json)
+        except (json.JSONDecodeError, TypeError):
+            messagebox.showerror("Erreur", "Détails illisibles pour ce relevé.")
+            return
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Tous les détails de la feuille de prépaie")
+        dialog.transient(self.winfo_toplevel())
+
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill="both", expand=True)
+
+        tree = ttk.Treeview(frame, columns=("label", "value"), show="tree headings", height=24)
+        tree.heading("label", text="Libellé")
+        tree.heading("value", text="Valeur")
+        tree.column("#0", width=0, stretch=False)
+        tree.column("label", width=260, anchor="w")
+        tree.column("value", width=100, anchor="w")
+        tree.tag_configure("section", font=("Segoe UI", 9, "bold"))
+        tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        scroll.pack(side="left", fill="y")
+        tree.config(yscrollcommand=scroll.set)
+
+        recap = details.get("recap") or {}
+        compteurs = details.get("compteurs") or {}
+        if recap:
+            tree.insert("", "end", values=("Récapitulatif du mois", ""), tags=("section",))
+            for label, value in recap.items():
+                tree.insert("", "end", values=(label, format_decimal(value)))
+        if compteurs:
+            tree.insert("", "end", values=("Compteurs (cumuls annuels)", ""), tags=("section",))
+            for label, value in compteurs.items():
+                tree.insert("", "end", values=(label, format_decimal(value)))
+
+        ttk.Button(dialog, text="Fermer", command=dialog.destroy).pack(pady=(0, 12))
 
     def refresh(self):
         for row in self.tree.get_children():

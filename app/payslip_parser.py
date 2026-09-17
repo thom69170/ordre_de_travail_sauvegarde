@@ -20,6 +20,11 @@ class PayslipData:
     hs_50: float = 0.0
     cumul_hs_25: float = 0.0
     cumul_hs_50: float = 0.0
+    # Tous les autres champs du "Récapitulatif mensuel" (ex: Jours travaillés, TTE, Repos,
+    # Repos différé acquis...) et des "Compteurs" (ex: Cumul TTE annuel, Solde H. RC nuit...),
+    # tels quels avec le libellé exact du document - pas seulement les heures sup.
+    recap: dict[str, float] = field(default_factory=dict)
+    compteurs: dict[str, float] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -99,5 +104,7 @@ def extract_payslip(path: Path) -> PayslipData:
     result.hs_50 = _find_value(recap, _HS50_LABEL)
     result.cumul_hs_25 = _find_value(compteurs, _HS25_LABEL)
     result.cumul_hs_50 = _find_value(compteurs, _HS50_LABEL)
+    result.recap = recap
+    result.compteurs = compteurs
 
     return result

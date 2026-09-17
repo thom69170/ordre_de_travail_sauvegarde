@@ -94,6 +94,9 @@ class Payslip:
     cumul_hs_50: float = 0.0
     source_filename: str = ""
     created_at: str = ""
+    # Tous les autres champs lus sur le document (JSON : {"recap": {...}, "compteurs": {...}}),
+    # avec le libellé exact du document - voir app/payslip_parser.py. Facultatif : "" si absent.
+    details_json: str = ""
 
 
 @dataclass

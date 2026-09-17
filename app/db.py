@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS payslips (
     cumul_hs_25 REAL DEFAULT 0,
     cumul_hs_50 REAL DEFAULT 0,
     source_filename TEXT DEFAULT '',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    details_json TEXT DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_payslips_period ON payslips(period_start);
@@ -86,6 +87,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(work_orders)").fetchall()}
     if "trajets_up_to_date" not in existing:
         conn.execute("ALTER TABLE work_orders ADD COLUMN trajets_up_to_date INTEGER DEFAULT 0")
+
+    existing_payslip_cols = {row["name"] for row in conn.execute("PRAGMA table_info(payslips)").fetchall()}
+    if "details_json" not in existing_payslip_cols:
+        conn.execute("ALTER TABLE payslips ADD COLUMN details_json TEXT DEFAULT ''")
 
 
 def init_db() -> None:
@@ -237,7 +242,7 @@ def _row_to_payslip(row: sqlite3.Row) -> Payslip:
 def insert_payslip(p: Payslip) -> int:
     with connect() as conn:
         cols = ["period_start", "period_end", "hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50",
-                "source_filename", "created_at"]
+                "source_filename", "created_at", "details_json"]
         values = [getattr(p, c) for c in cols]
         if not p.created_at:
             values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
@@ -253,7 +258,7 @@ def update_payslip(p: Payslip) -> None:
         raise ValueError("payslip without id cannot be updated")
     with connect() as conn:
         cols = ["period_start", "period_end", "hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50",
-                "source_filename"]
+                "source_filename", "details_json"]
         assignments = ", ".join(f"{c} = ?" for c in cols)
         values = [getattr(p, c) for c in cols] + [p.id]
         conn.execute(f"UPDATE payslips SET {assignments} WHERE id = ?", values)

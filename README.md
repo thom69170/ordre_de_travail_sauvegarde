@@ -68,6 +68,9 @@ statistiques par semaine / mois / année.
    marche même sans clé configurée) et de les garder en historique. Vérifie toujours les valeurs
    pré-remplies avant d'enregistrer. Comme dans l'onglet Importer, tu peux aussi envoyer le PDF
    depuis ton téléphone via le bouton **Recevoir depuis le téléphone...** (même Wi-Fi requis).
+   En plus des heures sup, la lecture récupère aussi tous les autres compteurs du document
+   (jours travaillés, TTE, repos différés, RC nuit, cumuls annuels...) — accessibles via le
+   bouton **Voir tous les détails...**.
 6. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
    l'onglet, avec le lien pour générer une clé gratuite. **Si tu configures une clé, tes photos
