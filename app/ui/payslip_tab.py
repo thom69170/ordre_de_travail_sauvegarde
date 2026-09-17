@@ -67,6 +67,10 @@ class PayslipTab(ttk.Frame):
             top, text="Importer une feuille de prépaie...", command=self.choose_file
         )
         self.choose_btn.pack(side="left")
+        self.phone_btn = ttk.Button(
+            top, text="Recevoir depuis le téléphone...", command=self._open_phone_upload_dialog
+        )
+        self.phone_btn.pack(side="left", padx=(8, 0))
         self.file_label = ttk.Label(top, text="Aucun fichier sélectionné", foreground=TEXT_MUTED)
         self.file_label.pack(side="left", padx=10)
 
@@ -133,7 +137,27 @@ class PayslipTab(ttk.Frame):
         )
         if not path_str:
             return
-        path = Path(path_str)
+        self._load_file(Path(path_str))
+
+    def _open_phone_upload_dialog(self):
+        from app.ui.phone_upload_dialog import PhoneUploadDialog
+
+        PhoneUploadDialog(
+            self.winfo_toplevel(),
+            on_file_received=self._load_file,
+            dialog_title="Recevoir une feuille de prépaie depuis le téléphone",
+            waiting_text="En attente d'une feuille de prépaie...",
+            received_noun="Fichier",
+            page_title="Heures sup.",
+            instruction="Choisis le PDF de ta feuille de prépaie, puis envoie-le au PC.",
+            choose_label="Choisir un fichier PDF",
+            accept=".pdf,application/pdf",
+            capture=False,
+            allowed_suffixes=frozenset({".pdf"}),
+            default_suffix=".pdf",
+        )
+
+    def _load_file(self, path: Path):
         try:
             result = extract_payslip(path)
         except Exception as exc:  # noqa: BLE001

@@ -23,12 +23,12 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024  # 30 Mo, largement suffisant pour une photo
 
 ALLOWED_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp", ".pdf"}
 
-_UPLOAD_PAGE = """<!doctype html>
+_UPLOAD_PAGE_TEMPLATE = """<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Envoyer une photo</title>
+<title>__TITLE__</title>
 <style>
   body { font-family: Segoe UI, Arial, sans-serif; background: #fafafa; color: #202020;
          margin: 0; padding: 24px 16px; text-align: center; }
@@ -45,10 +45,10 @@ _UPLOAD_PAGE = """<!doctype html>
 </style>
 </head>
 <body>
-  <h1>Ordres de travail</h1>
-  <p>Prends une photo de l'ordre de travail ou choisis un fichier, puis envoie-le au PC.</p>
-  <label for="f">Choisir / prendre une photo</label>
-  <input type="file" id="f" accept="image/*,.pdf" capture="environment">
+  <h1>__TITLE__</h1>
+  <p>__INSTRUCTION__</p>
+  <label for="f">__CHOOSE_LABEL__</label>
+  <input type="file" id="f" accept="__ACCEPT__"__CAPTURE_ATTR__>
   <img id="preview">
   <button id="send" disabled>Envoyer au PC</button>
   <div id="status"></div>
@@ -102,6 +102,19 @@ _UPLOAD_PAGE = """<!doctype html>
 </html>"""
 
 
+def _build_upload_page(title: str, instruction: str, choose_label: str, accept: str, capture: bool) -> bytes:
+    # Remplacement de texte simple plutôt que str.format() : le CSS/JS du template contient
+    # beaucoup d'accolades littérales qu'il faudrait sinon toutes doubler (source d'un bug déjà
+    # rencontré ici - voir l'historique du fichier).
+    html = _UPLOAD_PAGE_TEMPLATE
+    html = html.replace("__TITLE__", title)
+    html = html.replace("__INSTRUCTION__", instruction)
+    html = html.replace("__CHOOSE_LABEL__", choose_label)
+    html = html.replace("__ACCEPT__", accept)
+    html = html.replace("__CAPTURE_ATTR__", ' capture="environment"' if capture else "")
+    return html.encode("utf-8")
+
+
 def get_local_ip() -> str:
     """Adresse IP locale du PC sur le réseau Wi-Fi/Ethernet (pour que le téléphone puisse la joindre)."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -117,11 +130,25 @@ def get_local_ip() -> str:
 class PhoneUploadServer:
     """Serveur HTTP local éphémère, actif seulement pendant que la boîte de dialogue est ouverte."""
 
-    def __init__(self, on_file_received: Callable[[Path], None]):
+    def __init__(
+        self,
+        on_file_received: Callable[[Path], None],
+        *,
+        page_title: str = "Ordres de travail",
+        instruction: str = "Prends une photo de l'ordre de travail ou choisis un fichier, puis envoie-le au PC.",
+        choose_label: str = "Choisir / prendre une photo",
+        accept: str = "image/*,.pdf",
+        capture: bool = True,
+        allowed_suffixes: frozenset[str] = ALLOWED_SUFFIXES,
+        default_suffix: str = ".jpg",
+    ):
         self._on_file_received = on_file_received
         self._token = secrets.token_urlsafe(16)
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._page_body = _build_upload_page(page_title, instruction, choose_label, accept, capture)
+        self._allowed_suffixes = allowed_suffixes
+        self._default_suffix = default_suffix
 
     @property
     def token(self) -> str:
@@ -131,6 +158,9 @@ class PhoneUploadServer:
         """Démarre le serveur et retourne l'URL complète à afficher/encoder en QR code."""
         token = self._token
         on_file_received = self._on_file_received
+        page_body = self._page_body
+        allowed_suffixes = self._allowed_suffixes
+        default_suffix = self._default_suffix
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):  # noqa: A002 - silence la sortie console
@@ -138,7 +168,7 @@ class PhoneUploadServer:
 
             def do_GET(self):
                 if self.path.rstrip("/") == f"/u/{token}":
-                    body = _UPLOAD_PAGE.encode("utf-8")
+                    body = page_body
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
@@ -168,8 +198,8 @@ class PhoneUploadServer:
                 except Exception:  # noqa: BLE001
                     pass
                 suffix = Path(raw_name).suffix.lower()
-                if suffix not in ALLOWED_SUFFIXES:
-                    suffix = ".jpg"
+                if suffix not in allowed_suffixes:
+                    suffix = default_suffix
 
                 dest_dir = phone_uploads_dir()
                 dest_path = dest_dir / f"telephone_{secrets.token_hex(4)}{suffix}"

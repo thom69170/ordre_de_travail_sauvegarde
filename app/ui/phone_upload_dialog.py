@@ -13,15 +13,26 @@ from app.ui.common import ACCENT, TEXT_MUTED
 
 
 class PhoneUploadDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, on_file_received: Callable[[Path], None]):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        on_file_received: Callable[[Path], None],
+        *,
+        dialog_title: str = "Recevoir depuis le téléphone",
+        waiting_text: str = "En attente d'une photo...",
+        received_noun: str = "Photo",
+        **server_kwargs,
+    ):
         super().__init__(parent)
-        self.title("Recevoir depuis le téléphone")
+        self.title(dialog_title)
         self.resizable(False, False)
         self.transient(parent)
 
         self._on_file_received = on_file_received
+        self._waiting_text = waiting_text
+        self._received_noun = received_noun
         self._qr_imgtk = None
-        self._server = PhoneUploadServer(self._handle_received)
+        self._server = PhoneUploadServer(self._handle_received, **server_kwargs)
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -54,7 +65,7 @@ class PhoneUploadDialog(tk.Toplevel):
         self.url_var = tk.StringVar()
         ttk.Entry(frame, textvariable=self.url_var, width=42, state="readonly").pack(fill="x")
 
-        self.status_label = ttk.Label(frame, text="En attente d'une photo...", foreground=ACCENT)
+        self.status_label = ttk.Label(frame, text=self._waiting_text, foreground=ACCENT)
         self.status_label.pack(anchor="w", pady=(12, 0))
 
         ttk.Label(
@@ -87,7 +98,7 @@ class PhoneUploadDialog(tk.Toplevel):
         self.after(0, lambda: self._on_received_ui(path))
 
     def _on_received_ui(self, path: Path):
-        self.status_label.config(text=f"Photo reçue : {path.name} — analyse en cours...")
+        self.status_label.config(text=f"{self._received_noun} reçu(e) : {path.name} — analyse en cours...")
         self._on_file_received(path)
 
     def close(self):
