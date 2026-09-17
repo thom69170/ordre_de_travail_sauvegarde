@@ -27,15 +27,20 @@ Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique l
 son matricule (nombre) et la date du jour (ex: "Jeudi 16 JUILLET 2026"). Le corps liste les
 services de la journée, un bloc par ligne de service.
 
-Deux types de blocs à bien distinguer :
+Trois types de blocs à bien distinguer :
 - Les blocs "HLP" ("Haut Le Pied", conducteur seul sans passager - trajet à vide entre le dépôt
   et le début/fin d'un service, ou entre deux services) : la colonne SERVICE indique "HLP", et le
   texte du trajet utilise une FLÈCHE "->", ex: "HLP : SARCEY - DEPOT (RSYDEP) -> TARARE HAUTS DE
   TARARE (RTRHT1)". ⚠ Ce ne sont JAMAIS des trajets à extraire, quel que soit le nombre de fois où
   ils apparaissent.
-- Les vrais trajets de service (les seuls à extraire) sont les blocs identifiés par un code de
-  service (ex: "164TATA1520 (164LVH..."), et leur texte utilise une BARRE OBLIQUE "/", ex:
-  "TARARE HAUTS DE TARARE (RTRHT1) / TARARE AQUAVAL (RTRAQ) - QUAI - GIR. 16411", sur 1 ou 2
+- Les blocs "PERISCOL" (transport scolaire/périscolaire, payé par billet collectif plutôt que
+  par ticket individuel) : la colonne SERVICE indique "PERISCOL", sans code de service ni barre
+  oblique "/", juste une courte description (ex: "RETOUR ANCY ECOLE"). Pour CHAQUE bloc
+  "PERISCOL" rencontré, ajoute une entrée dans "trajets" avec "trajet" = "Billet collectif"
+  (ce texte fixe, toujours identique) et "ligne" = "" (vide, il n'y a pas de numéro de ligne ici).
+- Les vrais trajets de service (les seuls avec numéro de ligne) sont les blocs identifiés par un
+  code de service (ex: "164TATA1520 (164LVH..."), et leur texte utilise une BARRE OBLIQUE "/",
+  ex: "TARARE HAUTS DE TARARE (RTRHT1) / TARARE AQUAVAL (RTRAQ) - QUAI - GIR. 16411", sur 1 ou 2
   lignes. Le numéro de ligne de ce trajet est les chiffres au tout début du code de service,
   avant les lettres : "164TATA1520" -> ligne "164", "419SMTA0737" -> ligne "419",
   "86TSLY0600" -> ligne "86".
@@ -45,11 +50,13 @@ page, parfois avec des lignes très similaires les unes aux autres (ex: le même
 toute la journée) : c'est normal, et c'est justement pour ça qu'il faut être méthodique. Parcours
 le tableau des services du haut vers le bas, bloc par bloc, et pour CHAQUE bloc qui a un code de
 service et un trajet "LIEU / LIEU", ajoute une entrée dans "trajets" - même s'il est identique au
-précédent ; pour CHAQUE bloc "HLP" (flèche "->", sans code de service), ignore-le et passe au
+précédent ; pour CHAQUE bloc "PERISCOL", ajoute aussi une entrée "Billet collectif" comme décrit
+ci-dessus ; pour CHAQUE bloc "HLP" (flèche "->", sans code de service), ignore-le et passe au
 suivant. Ne t'arrête pas après avoir vu le même motif se répéter quelques fois : va bien jusqu'au
-dernier bloc avant "FIN DE SERVICE"/"FSR". Un trajet oublié ou un HLP compté par erreur sont deux
-erreurs aussi graves l'une que l'autre : compte mentalement les blocs de trajet (hors HLP) avant
-de répondre et vérifie que ta liste "trajets" a bien le même nombre d'entrées.
+dernier bloc avant "FIN DE SERVICE"/"FSR". Un trajet (ou "Billet collectif") oublié, ou un HLP
+compté par erreur, sont des erreurs aussi graves les unes que les autres : compte mentalement les
+blocs de trajet et "PERISCOL" (hors HLP) avant de répondre et vérifie que ta liste "trajets" a
+bien le même nombre d'entrées.
 
 Pour chaque page, en plus de la vue complète tu reçois aussi un agrandissement de sa moitié haute
 et un de sa moitié basse (elles se chevauchent légèrement au milieu) : utilise-les pour repérer
@@ -76,10 +83,11 @@ Réponds uniquement avec les champs demandés par le schéma :
   que le tableau, même quand la case est vide (0) ou que tu n'es pas sûr (fais ta meilleure
   estimation plutôt que d'omettre le champ - un champ manquant est traité comme une erreur bien
   plus grave qu'une valeur légèrement imprécise)
-- "trajets" : liste des VRAIS trajets de service (avec code de service, séparateur "/") tels
-  qu'ils apparaissent dans le tableau, un par ligne rencontrée (les doublons sont normaux et
-  voulus). N'INCLUS JAMAIS les blocs "HLP" (trajet à vide sans passager, séparateur "->", sans
-  code de service). Chaque entrée est un objet avec :
+- "trajets" : liste des VRAIS trajets de service (avec code de service, séparateur "/") ET des
+  blocs "PERISCOL" (convertis en "Billet collectif", voir ci-dessus) tels qu'ils apparaissent
+  dans le tableau, un par bloc rencontré (les doublons sont normaux et voulus). N'INCLUS JAMAIS
+  les blocs "HLP" (trajet à vide sans passager, séparateur "->", sans code de service). Chaque
+  entrée est un objet avec :
   - "ligne" : le numéro de ligne (voir ci-dessus), en chiffres uniquement, sans les lettres qui
     suivent ; chaîne vide si tu ne le trouves vraiment pas
   - "trajet" : "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre alphabétique, sans les
