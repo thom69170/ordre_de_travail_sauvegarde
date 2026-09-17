@@ -50,6 +50,13 @@ def phone_uploads_dir() -> Path:
     return d
 
 
+def payslips_dir() -> Path:
+    """Dossier des bulletins de paie/feuilles de prépaie importés (voir app/payslip_parser.py)."""
+    d = data_dir() / "payslips"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def db_path() -> Path:
     return data_dir() / "ordres.db"
 

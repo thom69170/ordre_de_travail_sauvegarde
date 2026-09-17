@@ -82,6 +82,21 @@ class WorkOrder:
 
 
 @dataclass
+class Payslip:
+    """Heures supplémentaires relevées sur une feuille de prépaie (jamais calculées par
+    l'app - voir app/payslip_parser.py)."""
+    id: int | None = None
+    period_start: str = ""  # ISO YYYY-MM-DD
+    period_end: str = ""  # ISO YYYY-MM-DD
+    hs_25: float = 0.0
+    hs_50: float = 0.0
+    cumul_hs_25: float = 0.0
+    cumul_hs_50: float = 0.0
+    source_filename: str = ""
+    created_at: str = ""
+
+
+@dataclass
 class ExtractionResult:
     """Résultat brut (et donc potentiellement imparfait) de l'OCR, avant validation utilisateur."""
     driver_name: str = ""

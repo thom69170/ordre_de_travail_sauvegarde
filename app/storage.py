@@ -4,7 +4,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from app.paths import imports_dir
+from app.paths import imports_dir, payslips_dir
 
 
 def store_source_file(original_path: Path, date_iso: str) -> tuple[str, str]:
@@ -37,5 +37,32 @@ def resolve_source_path(stored_filename: str) -> Path:
 
 def delete_source_file(stored_filename: str) -> None:
     path = resolve_source_path(stored_filename)
+    if path.exists():
+        path.unlink()
+
+
+def store_payslip_file(original_path: Path, period_start: str) -> str:
+    """Copie une feuille de prépaie dans le dossier de données de l'app. Retourne le nom du
+    fichier stocké (préfixé par le début de la période, pour rester lisible)."""
+    suffix = original_path.suffix.lower()
+    safe_period = period_start if period_start else "sans-periode"
+    dest_dir = payslips_dir()
+
+    dest_path = dest_dir / f"{safe_period}{suffix}"
+    counter = 1
+    while dest_path.exists():
+        dest_path = dest_dir / f"{safe_period}_{counter}{suffix}"
+        counter += 1
+
+    shutil.copy2(original_path, dest_path)
+    return dest_path.name
+
+
+def resolve_payslip_path(stored_filename: str) -> Path:
+    return payslips_dir() / stored_filename
+
+
+def delete_payslip_file(stored_filename: str) -> None:
+    path = resolve_payslip_path(stored_filename)
     if path.exists():
         path.unlink()

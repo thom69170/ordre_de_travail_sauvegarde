@@ -6,6 +6,7 @@ from tkinter import ttk
 
 from app.ui.history_tab import HistoryTab
 from app.ui.import_tab import ImportTab
+from app.ui.payslip_tab import PayslipTab
 from app.ui.settings_tab import SettingsTab
 from app.ui.stats_tab import StatsTab
 
@@ -24,16 +25,18 @@ class MainWindow(ttk.Frame):
         self.import_tab = ImportTab(self.notebook, self)
         self.history_tab = HistoryTab(self.notebook, self)
         self.stats_tab = StatsTab(self.notebook, self)
+        self.payslip_tab = PayslipTab(self.notebook, self)
         self.settings_tab = SettingsTab(self.notebook, self)
 
         self.notebook.add(self.import_tab, text="Importer")
         self.notebook.add(self.history_tab, text="Historique")
         self.notebook.add(self.stats_tab, text="Statistiques")
+        self.notebook.add(self.payslip_tab, text="Heures sup.")
         self.notebook.add(self.settings_tab, text="Paramètres")
 
         self._tab_ids = {
             "import": self.import_tab, "history": self.history_tab,
-            "stats": self.stats_tab, "settings": self.settings_tab,
+            "stats": self.stats_tab, "payslip": self.payslip_tab, "settings": self.settings_tab,
         }
 
     def select_tab(self, name: str):

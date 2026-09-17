@@ -6,7 +6,7 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from app.models import SUMMARY_FIELD_NAMES, WorkOrder, split_trajet
+from app.models import SUMMARY_FIELD_NAMES, Payslip, WorkOrder, split_trajet
 from app.paths import db_path
 
 SCHEMA = """
@@ -51,6 +51,20 @@ CREATE TABLE IF NOT EXISTS trajets (
 CREATE INDEX IF NOT EXISTS idx_trajets_date ON trajets(date);
 CREATE INDEX IF NOT EXISTS idx_trajets_label ON trajets(label);
 CREATE INDEX IF NOT EXISTS idx_trajets_work_order ON trajets(work_order_id);
+
+CREATE TABLE IF NOT EXISTS payslips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    hs_25 REAL DEFAULT 0,
+    hs_50 REAL DEFAULT 0,
+    cumul_hs_25 REAL DEFAULT 0,
+    cumul_hs_50 REAL DEFAULT 0,
+    source_filename TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_payslips_period ON payslips(period_start);
 """
 
 
@@ -214,3 +228,57 @@ def list_work_orders(start_date: str | None = None, end_date: str | None = None)
     with connect() as conn:
         ids = [r["id"] for r in conn.execute(query, params).fetchall()]
     return [wo for wo in (get_work_order(i) for i in ids) if wo is not None]
+
+
+def _row_to_payslip(row: sqlite3.Row) -> Payslip:
+    return Payslip(**{k: row[k] for k in row.keys()})
+
+
+def insert_payslip(p: Payslip) -> int:
+    with connect() as conn:
+        cols = ["period_start", "period_end", "hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50",
+                "source_filename", "created_at"]
+        values = [getattr(p, c) for c in cols]
+        if not p.created_at:
+            values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
+        placeholders = ", ".join(["?"] * len(cols))
+        cur = conn.execute(
+            f"INSERT INTO payslips ({', '.join(cols)}) VALUES ({placeholders})", values
+        )
+        return cur.lastrowid
+
+
+def update_payslip(p: Payslip) -> None:
+    if p.id is None:
+        raise ValueError("payslip without id cannot be updated")
+    with connect() as conn:
+        cols = ["period_start", "period_end", "hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50",
+                "source_filename"]
+        assignments = ", ".join(f"{c} = ?" for c in cols)
+        values = [getattr(p, c) for c in cols] + [p.id]
+        conn.execute(f"UPDATE payslips SET {assignments} WHERE id = ?", values)
+
+
+def delete_payslip(payslip_id: int) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM payslips WHERE id = ?", (payslip_id,))
+
+
+def get_payslip(payslip_id: int) -> Payslip | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM payslips WHERE id = ?", (payslip_id,)).fetchone()
+    return _row_to_payslip(row) if row is not None else None
+
+
+def get_payslip_by_period(period_start: str) -> Payslip | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM payslips WHERE period_start = ?", (period_start,)
+        ).fetchone()
+    return _row_to_payslip(row) if row is not None else None
+
+
+def list_payslips() -> list[Payslip]:
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM payslips ORDER BY period_start DESC").fetchall()
+    return [_row_to_payslip(r) for r in rows]

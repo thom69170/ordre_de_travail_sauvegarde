@@ -59,7 +59,13 @@ statistiques par semaine / mois / année.
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
-5. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
+5. Onglet **Heures sup.** : suivi des heures supplémentaires (25 %/50 %) relevées sur tes feuilles
+   de prépaie/bulletins de paie. **L'app ne calcule jamais elle-même tes heures sup** (le mode de
+   calcul exact - modulation du temps de travail - n'est pas garanti fiable à deviner) : elle se
+   contente de relire les chiffres déjà présents sur le document (import direct du PDF, lecture
+   automatique du texte - pas besoin d'OCR/Gemini, ça marche même sans clé configurée) et de les
+   garder en historique. Vérifie toujours les valeurs pré-remplies avant d'enregistrer.
+6. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
    l'onglet, avec le lien pour générer une clé gratuite. **Si tu configures une clé, tes photos
    sont alors envoyées aux serveurs de Google pour être analysées** (l'onglet l'explique
