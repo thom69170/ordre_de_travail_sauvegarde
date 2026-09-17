@@ -97,6 +97,7 @@ def main() -> int:
 
     window = MainWindow(root)
     _check_for_update_in_background(root, window)
+    _refresh_old_trajets_in_background(root, window)
     root.mainloop()
     return 0
 
@@ -115,6 +116,54 @@ def _check_for_update_in_background(root: tk.Tk, window: MainWindow) -> None:
             root.after(0, lambda: window.settings_tab.set_update_available(remote_version))
 
     threading.Thread(target=worker, daemon=True).start()
+
+
+def _refresh_old_trajets_in_background(root: tk.Tk, window: MainWindow) -> None:
+    """Ré-essaie automatiquement la lecture des trajets des anciens OT jamais retouchés depuis
+    leur import (voir db.list_work_orders_needing_trajet_refresh) - utile après une mise à jour
+    qui améliore l'extraction (ex: exclusion des trajets HLP, numéro de ligne). Ne touche jamais
+    à un OT déjà modifié/réenregistré à la main, et ne fait rien sans clé Gemini configurée."""
+    import threading
+    import time
+
+    def worker():
+        from app import config
+
+        if not config.get_gemini_api_key():
+            return
+
+        from app import db, ocr_engine, storage
+        from app.extraction import extract_from_pages as run_extraction
+
+        candidates = db.list_work_orders_needing_trajet_refresh()
+        refreshed = 0
+        for wo in candidates:
+            try:
+                source_path = storage.resolve_source_path(wo.source_filename)
+                if not source_path.exists():
+                    continue
+                pages = ocr_engine.load_pages(source_path)
+                result = run_extraction(pages)
+                db.refresh_trajets(wo.id, result.trajets)
+                refreshed += 1
+            except Exception:  # noqa: BLE001
+                continue
+            time.sleep(1)  # évite de rafaler l'API Gemini si plusieurs OT sont concernés
+
+        if refreshed:
+            root.after(0, lambda: _notify_trajets_refreshed(window, refreshed))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _notify_trajets_refreshed(window: MainWindow, count: int) -> None:
+    window.refresh_other_tabs("startup")
+    messagebox.showinfo(
+        "Trajets mis à jour",
+        f"{count} ancien(s) ordre(s) de travail {'ont' if count > 1 else 'a'} été relu(s) "
+        "automatiquement avec les dernières améliorations (trajets HLP exclus, numéro de ligne "
+        "détecté). Vérifie l'onglet Historique si tu veux voir le détail.",
+    )
 
 
 if __name__ == "__main__":

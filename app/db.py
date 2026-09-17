@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS work_orders (
     primes REAL DEFAULT 0,
     dim_travail REAL DEFAULT 0,
     ferie REAL DEFAULT 0,
-    tps_oc REAL DEFAULT 0
+    tps_oc REAL DEFAULT 0,
+    trajets_up_to_date INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_work_orders_date ON work_orders(date);
@@ -65,13 +66,22 @@ def connect():
         conn.close()
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Ajoute les colonnes introduites après la création initiale de la table (les
+    installations existantes ne les ont pas : CREATE TABLE IF NOT EXISTS ne les rajoute pas)."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(work_orders)").fetchall()}
+    if "trajets_up_to_date" not in existing:
+        conn.execute("ALTER TABLE work_orders ADD COLUMN trajets_up_to_date INTEGER DEFAULT 0")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
 
 
 def _row_to_work_order(row: sqlite3.Row) -> WorkOrder:
-    data = {k: row[k] for k in row.keys() if k != "id"}
+    data = {k: row[k] for k in row.keys() if k not in ("id", "trajets_up_to_date")}
     wo = WorkOrder(id=row["id"], **data)
     return wo
 
@@ -84,8 +94,12 @@ def insert_work_order(wo: WorkOrder) -> int:
         if not wo.created_at:
             values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
         placeholders = ", ".join(["?"] * len(cols))
+        # trajets_up_to_date = 1 : ce trajet vient d'être extrait avec la logique actuelle (la
+        # plus récente), pas besoin de le retraiter automatiquement plus tard - voir
+        # list_work_orders_needing_trajet_refresh().
         cur = conn.execute(
-            f"INSERT INTO work_orders ({', '.join(cols)}) VALUES ({placeholders})",
+            f"INSERT INTO work_orders ({', '.join(cols)}, trajets_up_to_date) "
+            f"VALUES ({placeholders}, 1)",
             values,
         )
         work_order_id = cur.lastrowid
@@ -101,7 +115,12 @@ def update_work_order(wo: WorkOrder) -> None:
                 "notes"] + SUMMARY_FIELD_NAMES
         assignments = ", ".join(f"{c} = ?" for c in cols)
         values = [getattr(wo, c) for c in cols] + [wo.id]
-        conn.execute(f"UPDATE work_orders SET {assignments} WHERE id = ?", values)
+        # L'utilisateur vient de revoir/enregistrer cet OT à la main : on ne le retraitera plus
+        # jamais automatiquement (voir list_work_orders_needing_trajet_refresh()), pour ne
+        # jamais écraser une correction manuelle (ex: numéro de ligne ajouté à la main).
+        conn.execute(
+            f"UPDATE work_orders SET {assignments}, trajets_up_to_date = 1 WHERE id = ?", values
+        )
         _replace_trajets(conn, wo.id, wo.date, wo.trajets)
 
 
@@ -142,6 +161,31 @@ def get_work_order_by_date(date: str) -> WorkOrder | None:
         if row is None:
             return None
     return get_work_order(row["id"])
+
+
+def list_work_orders_needing_trajet_refresh() -> list[WorkOrder]:
+    """OT jamais retouchés depuis leur import (voir insert_work_order/update_work_order) et
+    ayant un fichier source : candidats pour un ré-essai automatique de lecture des trajets
+    avec la logique d'extraction actuelle (ex: après une mise à jour qui l'améliore)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id FROM work_orders WHERE trajets_up_to_date = 0 AND source_filename != ''"
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+    return [wo for wo in (get_work_order(i) for i in ids) if wo is not None]
+
+
+def refresh_trajets(work_order_id: int, trajets: list[str]) -> None:
+    """Remplace uniquement les trajets d'un OT (ré-analyse automatique en arrière-plan) : ne
+    touche à aucun autre champ, et marque l'OT comme à jour pour ne plus le retraiter."""
+    with connect() as conn:
+        row = conn.execute("SELECT date FROM work_orders WHERE id = ?", (work_order_id,)).fetchone()
+        if row is None:
+            return
+        _replace_trajets(conn, work_order_id, row["date"], trajets)
+        conn.execute(
+            "UPDATE work_orders SET trajets_up_to_date = 1 WHERE id = ?", (work_order_id,)
+        )
 
 
 def list_known_lignes() -> list[str]:

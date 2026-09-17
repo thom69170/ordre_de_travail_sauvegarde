@@ -51,6 +51,11 @@ statistiques par semaine / mois / année.
      sur l'OT, ex: "164TATA1520" → ligne 164) ; tu peux aussi le modifier (double-clique sur un
      trajet) ou en ajouter un manuellement — les numéros déjà utilisés sont alors proposés
      automatiquement (pas besoin de les retaper).
+   - **Mise à jour automatique des anciens OT** : quand une mise à jour améliore la lecture des
+     trajets (comme celle-ci), l'app relit automatiquement en arrière-plan (avec Gemini) les
+     anciens OT jamais retouchés depuis leur import, pour leur appliquer la nouvelle logique —
+     un message s'affiche une fois que c'est fait. Seuls les trajets sont concernés (jamais les
+     autres champs), et un OT que tu as déjà corrigé/réenregistré à la main n'est jamais touché.
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
