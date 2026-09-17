@@ -1,5 +1,5 @@
 """Onglet 'Heures sup.' : suivi des heures supplémentaires relevées sur les feuilles de
-prépaie/bulletins de paie (jamais recalculées par l'app - voir app/payslip_parser.py)."""
+prépaie (jamais recalculées par l'app - voir app/payslip_parser.py)."""
 from __future__ import annotations
 
 import subprocess
@@ -64,7 +64,7 @@ class PayslipTab(ttk.Frame):
         top = ttk.Frame(self, padding=12)
         top.pack(fill="x")
         self.choose_btn = ttk.Button(
-            top, text="Importer un bulletin de paie...", command=self.choose_file
+            top, text="Importer une feuille de prépaie...", command=self.choose_file
         )
         self.choose_btn.pack(side="left")
         self.file_label = ttk.Label(top, text="Aucun fichier sélectionné", foreground=TEXT_MUTED)
@@ -129,7 +129,7 @@ class PayslipTab(ttk.Frame):
 
     def choose_file(self):
         path_str = filedialog.askopenfilename(
-            title="Choisir une feuille de prépaie / un bulletin de paie", filetypes=FILE_TYPES
+            title="Choisir une feuille de prépaie", filetypes=FILE_TYPES
         )
         if not path_str:
             return
