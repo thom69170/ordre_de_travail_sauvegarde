@@ -44,7 +44,10 @@ statistiques par semaine / mois / année.
      un fichier et de l'envoyer directement — pas d'appli à installer sur le téléphone. La photo
      reçue est traitée automatiquement, comme si elle avait été importée depuis le PC. Windows
      peut demander une autorisation de pare-feu la première fois (à accepter, sinon le téléphone
-     ne peut pas joindre le PC).
+     ne peut pas joindre le PC). **La fenêtre reste ouverte pour envoyer plusieurs photos à la
+     suite** avec le même QR code : si tu en envoies une nouvelle pendant que la précédente est
+     encore en cours d'analyse/relecture, elle est mise en attente (compteur affiché en haut) et
+     chargée automatiquement dès que tu enregistres ou réinitialises le formulaire courant.
    - **Numéro de ligne** : chaque trajet peut être associé à un numéro de ligne (ex: "164 —
      CHARMILLES / TARARE GARE") — pratique quand tu fais plusieurs lignes différentes le même
      jour. Avec Gemini configuré, il est détecté automatiquement (lu depuis le code de service
@@ -67,7 +70,8 @@ statistiques par semaine / mois / année.
    document (import direct du PDF, lecture automatique du texte - pas besoin d'OCR/Gemini, ça
    marche même sans clé configurée) et de les garder en historique. Vérifie toujours les valeurs
    pré-remplies avant d'enregistrer. Comme dans l'onglet Importer, tu peux aussi envoyer le PDF
-   depuis ton téléphone via le bouton **Recevoir depuis le téléphone...** (même Wi-Fi requis).
+   depuis ton téléphone via le bouton **Recevoir depuis le téléphone...** (même Wi-Fi requis),
+   en enchaînant plusieurs feuilles de prépaie à la suite avec le même QR code si besoin.
    En plus des heures sup, la lecture récupère aussi tous les autres compteurs du document
    (jours travaillés, TTE, repos différés, RC nuit, cumuls annuels...) — accessibles via le
    bouton **Voir tous les détails...**.

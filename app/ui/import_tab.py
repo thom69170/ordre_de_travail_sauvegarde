@@ -64,6 +64,7 @@ class ImportTab(ttk.Frame):
         self._thumbnail_imgtk = None
         self._editing_trajet_index: int | None = None
         self.summary_entries: dict[str, LabeledEntry] = {}
+        self._phone_queue: list[Path] = []
 
         self._build_ui()
         self._maybe_show_ocr_banner()
@@ -84,6 +85,9 @@ class ImportTab(ttk.Frame):
 
         self.file_label = ttk.Label(top, text="Aucun fichier sélectionné", foreground=TEXT_MUTED)
         self.file_label.pack(side="left", padx=10)
+
+        self.queue_label = ttk.Label(top, text="", foreground=ACCENT)
+        self.queue_label.pack(side="left")
 
         self.status_label = ttk.Label(top, text="", foreground=ACCENT, font=("Segoe UI", 10, "bold"))
         self.status_label.pack(side="right")
@@ -135,7 +139,7 @@ class ImportTab(ttk.Frame):
             header, text="← Retour à l'historique", command=self._back_to_history
         )
 
-        self.reset_btn = ttk.Button(header, text="Réinitialiser le formulaire", command=self.reset_form)
+        self.reset_btn = ttk.Button(header, text="Réinitialiser le formulaire", command=self._on_reset_clicked)
         self.reset_btn.pack(side="left", padx=(20, 6))
         self.save_btn = ttk.Button(header, text="Enregistrer", command=self.save)
         self.save_btn.pack(side="left")
@@ -258,14 +262,42 @@ class ImportTab(ttk.Frame):
     def _open_phone_upload_dialog(self):
         from app.ui.phone_upload_dialog import PhoneUploadDialog
 
-        PhoneUploadDialog(self.winfo_toplevel(), on_file_received=self._receive_file_from_phone)
+        PhoneUploadDialog(
+            self.winfo_toplevel(),
+            on_file_received=self._receive_file_from_phone,
+            waiting_text="En attente d'une photo... (tu peux en envoyer plusieurs à la suite)",
+        )
 
     def _receive_file_from_phone(self, path: Path):
+        # Le téléphone peut envoyer plusieurs fichiers à la suite avec le même QR code : on les
+        # empile et on ne charge le suivant que quand le formulaire actuel a été enregistré ou
+        # réinitialisé, pour ne jamais écraser une analyse en cours ou pas encore relue.
+        self._phone_queue.append(path)
+        self._maybe_start_next_from_queue()
+
+    def _maybe_start_next_from_queue(self):
+        self._update_queue_label()
+        if self.current_path is not None or self.editing_id is not None:
+            return
+        if not self._phone_queue:
+            return
+        path = self._phone_queue.pop(0)
+        self._update_queue_label()
         self.reset_form(keep_file_dialog_open=True)
         self.current_path = path
         self.file_label.config(text=f"{path.name} (reçu du téléphone)")
         self._set_processing(True)
         threading.Thread(target=self._process_file, args=(path,), daemon=True).start()
+
+    def _update_queue_label(self):
+        n = len(self._phone_queue)
+        self.queue_label.config(
+            text=f"+{n} en attente (envoyé{'s' if n != 1 else ''} depuis le téléphone)" if n else ""
+        )
+
+    def _on_reset_clicked(self):
+        self.reset_form()
+        self._maybe_start_next_from_queue()
 
     def _set_processing(self, active: bool):
         """Rend l'analyse en cours difficile à manquer (barre de progression animée + texte en
@@ -301,6 +333,8 @@ class ImportTab(ttk.Frame):
     def _on_process_error(self, exc: Exception):
         self._set_processing(False)
         messagebox.showerror("Erreur", f"Impossible de lire ce fichier :\n{exc}")
+        self.reset_form()
+        self._maybe_start_next_from_queue()
 
     def _apply_extraction(self, pages: list[Image.Image], extraction):
         self._set_processing(False)
@@ -420,6 +454,7 @@ class ImportTab(ttk.Frame):
 
     def _back_to_history(self):
         self.reset_form()
+        self._maybe_start_next_from_queue()
         self.app.select_tab("history")
 
     def load_for_edit(self, work_order: WorkOrder):
@@ -528,3 +563,4 @@ class ImportTab(ttk.Frame):
         messagebox.showinfo("Enregistré", f"Ordre de travail du {date_iso} enregistré.")
         self.reset_form()
         self.app.refresh_other_tabs("import")
+        self._maybe_start_next_from_queue()

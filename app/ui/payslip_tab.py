@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from app import db, storage
 from app.models import Payslip
 from app.payslip_parser import extract_payslip
-from app.ui.common import LabeledEntry, TEXT_MUTED, format_decimal
+from app.ui.common import ACCENT, LabeledEntry, TEXT_MUTED, format_decimal
 
 FILE_TYPES = [
     ("PDF", "*.pdf"),
@@ -58,6 +58,7 @@ class PayslipTab(ttk.Frame):
         self.current_path: Path | None = None
         self.current_details_json: str = ""
         self.editing_id: int | None = None
+        self._phone_queue: list[Path] = []
         self._build_ui()
         self.refresh()
 
@@ -77,6 +78,9 @@ class PayslipTab(ttk.Frame):
         self.file_label = ttk.Label(top, text="Aucun fichier sélectionné", foreground=TEXT_MUTED)
         self.file_label.pack(side="left", padx=10)
 
+        self.queue_label = ttk.Label(top, text="", foreground=ACCENT)
+        self.queue_label.pack(side="left")
+
         form = ttk.LabelFrame(self, text="Heures sup. relevées", padding=10)
         form.pack(fill="x", padx=12, pady=(0, 8))
 
@@ -87,7 +91,7 @@ class PayslipTab(ttk.Frame):
         self.end_entry = LabeledEntry(row1, "Fin période (JJ/MM/AAAA)", width=14)
         self.end_entry.pack(side="left", padx=(0, 20))
         self.back_btn = ttk.Button(row1, text="← Retour à la liste", command=self._back_to_list)
-        self.reset_btn = ttk.Button(row1, text="Réinitialiser", command=self.reset_form)
+        self.reset_btn = ttk.Button(row1, text="Réinitialiser", command=self._on_reset_clicked)
         self.reset_btn.pack(side="left", padx=(0, 6))
         self.save_btn = ttk.Button(row1, text="Enregistrer", command=self.save)
         self.save_btn.pack(side="left")
@@ -157,9 +161,9 @@ class PayslipTab(ttk.Frame):
 
         PhoneUploadDialog(
             self.winfo_toplevel(),
-            on_file_received=self._load_file,
+            on_file_received=self._receive_file_from_phone,
             dialog_title="Recevoir une feuille de prépaie depuis le téléphone",
-            waiting_text="En attente d'une feuille de prépaie...",
+            waiting_text="En attente d'une feuille de prépaie... (tu peux en envoyer plusieurs à la suite)",
             received_noun="Fichier",
             page_title="Heures sup.",
             instruction="Choisis le PDF de ta feuille de prépaie, puis envoie-le au PC.",
@@ -170,11 +174,39 @@ class PayslipTab(ttk.Frame):
             default_suffix=".pdf",
         )
 
+    def _receive_file_from_phone(self, path: Path):
+        # Comme pour l'onglet Importer : le téléphone peut envoyer plusieurs feuilles de prépaie
+        # à la suite avec le même QR code, on les empile et on ne charge la suivante qu'une fois
+        # le relevé courant enregistré ou réinitialisé.
+        self._phone_queue.append(path)
+        self._maybe_start_next_from_queue()
+
+    def _maybe_start_next_from_queue(self):
+        self._update_queue_label()
+        if self.current_path is not None or self.editing_id is not None:
+            return
+        if not self._phone_queue:
+            return
+        path = self._phone_queue.pop(0)
+        self._update_queue_label()
+        self._load_file(path)
+
+    def _update_queue_label(self):
+        n = len(self._phone_queue)
+        self.queue_label.config(
+            text=f"+{n} en attente (envoyé{'s' if n != 1 else ''} depuis le téléphone)" if n else ""
+        )
+
+    def _on_reset_clicked(self):
+        self.reset_form()
+        self._maybe_start_next_from_queue()
+
     def _load_file(self, path: Path):
         try:
             result = extract_payslip(path)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Erreur", f"Impossible de lire ce fichier :\n{exc}")
+            self._maybe_start_next_from_queue()
             return
 
         self.reset_form(keep_file_dialog_open=True)
@@ -250,6 +282,7 @@ class PayslipTab(ttk.Frame):
 
     def _back_to_list(self):
         self.reset_form()
+        self._maybe_start_next_from_queue()
 
     def _selected_id(self) -> int | None:
         sel = self.tree.selection()
@@ -342,6 +375,7 @@ class PayslipTab(ttk.Frame):
         messagebox.showinfo("Enregistré", f"Relevé du {_fmt_date(start_iso)} enregistré.")
         self.reset_form()
         self.refresh()
+        self._maybe_start_next_from_queue()
 
     def _show_details_dialog(self):
         if not self.current_details_json:

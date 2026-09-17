@@ -31,6 +31,7 @@ class PhoneUploadDialog(tk.Toplevel):
         self._on_file_received = on_file_received
         self._waiting_text = waiting_text
         self._received_noun = received_noun
+        self._received_count = 0
         self._qr_imgtk = None
         self._server = PhoneUploadServer(self._handle_received, **server_kwargs)
 
@@ -71,8 +72,10 @@ class PhoneUploadDialog(tk.Toplevel):
         ttk.Label(
             frame,
             text="Le téléphone doit être sur le même réseau Wi-Fi que ce PC.\n"
-                 "Cette réception reste active tant que cette fenêtre est ouverte.",
-            foreground=TEXT_MUTED, justify="left",
+                 "Cette réception reste active tant que cette fenêtre est ouverte : tu peux "
+                 "envoyer plusieurs documents à la suite avec le même QR code, ils seront "
+                 "traités l'un après l'autre.",
+            foreground=TEXT_MUTED, justify="left", wraplength=320,
         ).pack(anchor="w", pady=(4, 0))
 
         ttk.Button(frame, text="Fermer", command=self.close).pack(anchor="e", pady=(16, 0))
@@ -98,7 +101,11 @@ class PhoneUploadDialog(tk.Toplevel):
         self.after(0, lambda: self._on_received_ui(path))
 
     def _on_received_ui(self, path: Path):
-        self.status_label.config(text=f"{self._received_noun} reçu(e) : {path.name} — analyse en cours...")
+        self._received_count += 1
+        self.status_label.config(
+            text=f"{self._received_count} fichier(s) reçu(s) au total (dernier : {path.name}) — "
+                 "tu peux continuer à en envoyer d'autres."
+        )
         self._on_file_received(path)
 
     def close(self):

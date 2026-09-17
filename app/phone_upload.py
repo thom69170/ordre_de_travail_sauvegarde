@@ -84,7 +84,7 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
       body: file,
     }).then(r => {
       if (r.ok) {
-        status.textContent = 'Envoyé ! Tu peux fermer cette page ou envoyer une autre photo.';
+        status.textContent = 'Envoyé ! Tu peux fermer cette page ou envoyer un autre fichier.';
         input.value = '';
         file = null;
         preview.style.display = 'none';
