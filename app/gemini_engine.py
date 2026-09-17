@@ -24,18 +24,29 @@ TIMEOUT_SECONDS = 60
 PROMPT = """Tu analyses un "ordre de travail" (feuille de route) d'un conducteur de bus/car en France.
 Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique le nom du conducteur,
 son matricule (nombre) et la date du jour (ex: "Jeudi 16 JUILLET 2026"). Le corps liste les
-services de la journée, un service par bloc de lignes ; parmi eux, certains blocs (souvent
-identifiés par un code du type "164TATA1520 (164LVH...") contiennent un trajet du type
-"LIEU A (CODE) / LIEU B (CODE)" sur 1 ou 2 lignes.
+services de la journée, un bloc par ligne de service.
 
-Ces blocs de trajet se répètent souvent 8 à 15 fois sur la page, parfois avec des lignes très
-similaires les unes aux autres (ex: le même aller-retour répété toute la journée) : c'est normal,
-et c'est justement pour ça qu'il faut être méthodique. Parcours le tableau des services du haut
-vers le bas, bloc par bloc, et pour CHAQUE bloc qui contient un trajet "LIEU / LIEU", ajoute une
-entrée dans "trajets" - même s'il est identique au précédent. Ne t'arrête pas après avoir vu le
-même motif se répéter quelques fois : va bien jusqu'au dernier bloc avant "FIN DE SERVICE"/"FSR".
-Un trajet oublié est une erreur : compte mentalement les blocs de trajet avant de répondre et
-vérifie que ta liste "trajets" a bien le même nombre d'entrées.
+Deux types de blocs à bien distinguer :
+- Les blocs "HLP" ("Haut Le Pied", conducteur seul sans passager - trajet à vide entre le dépôt
+  et le début/fin d'un service, ou entre deux services) : la colonne SERVICE indique "HLP", et le
+  texte du trajet utilise une FLÈCHE "->", ex: "HLP : SARCEY - DEPOT (RSYDEP) -> TARARE HAUTS DE
+  TARARE (RTRHT1)". ⚠ Ce ne sont JAMAIS des trajets à extraire, quel que soit le nombre de fois où
+  ils apparaissent.
+- Les vrais trajets de service (les seuls à extraire) sont les blocs identifiés par un code de
+  service (ex: "164TATA1520 (164LVH..."), et leur texte utilise une BARRE OBLIQUE "/", ex:
+  "TARARE HAUTS DE TARARE (RTRHT1) / TARARE AQUAVAL (RTRAQ) - QUAI - GIR. 16411", sur 1 ou 2
+  lignes.
+
+Ces blocs de trajet (avec code de service, séparateur "/") se répètent souvent 8 à 15 fois sur la
+page, parfois avec des lignes très similaires les unes aux autres (ex: le même aller-retour répété
+toute la journée) : c'est normal, et c'est justement pour ça qu'il faut être méthodique. Parcours
+le tableau des services du haut vers le bas, bloc par bloc, et pour CHAQUE bloc qui a un code de
+service et un trajet "LIEU / LIEU", ajoute une entrée dans "trajets" - même s'il est identique au
+précédent ; pour CHAQUE bloc "HLP" (flèche "->", sans code de service), ignore-le et passe au
+suivant. Ne t'arrête pas après avoir vu le même motif se répéter quelques fois : va bien jusqu'au
+dernier bloc avant "FIN DE SERVICE"/"FSR". Un trajet oublié ou un HLP compté par erreur sont deux
+erreurs aussi graves l'une que l'autre : compte mentalement les blocs de trajet (hors HLP) avant
+de répondre et vérifie que ta liste "trajets" a bien le même nombre d'entrées.
 
 Pour chaque page, en plus de la vue complète tu reçois aussi un agrandissement de sa moitié haute
 et un de sa moitié basse (elles se chevauchent légèrement au milieu) : utilise-les pour repérer
@@ -62,10 +73,11 @@ Réponds uniquement avec les champs demandés par le schéma :
   que le tableau, même quand la case est vide (0) ou que tu n'es pas sûr (fais ta meilleure
   estimation plutôt que d'omettre le champ - un champ manquant est traité comme une erreur bien
   plus grave qu'une valeur légèrement imprécise)
-- "trajets" : liste des trajets tels qu'ils apparaissent dans le tableau des services, un par
-  ligne rencontrée (les doublons sont normaux et voulus), chacun normalisé en
-  "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre alphabétique, sans les codes entre
-  parenthèses ni la mention GIR/QUAI)
+- "trajets" : liste des VRAIS trajets de service (avec code de service, séparateur "/") tels
+  qu'ils apparaissent dans le tableau, un par ligne rencontrée (les doublons sont normaux et
+  voulus), chacun normalisé en "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre
+  alphabétique, sans les codes entre parenthèses ni la mention GIR/QUAI). N'INCLUS JAMAIS les
+  blocs "HLP" (trajet à vide sans passager, séparateur "->", sans code de service).
 - "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus, y compris ceux du
   tableau récapitulatif où tu as dû deviner (vide seulement si tout est clair)
 """
@@ -282,6 +294,16 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         )
     else:
         result.trajets = gemini_trajets
+        if tesseract_trajets and len(gemini_trajets) > len(tesseract_trajets):
+            # L'OCR local ne peut structurellement pas compter un trajet "HLP" (il exige un
+            # séparateur "/", jamais utilisé pour un HLP), donc un surplus côté Gemini est
+            # suspect - sans certitude sur la cause (HLP compté par erreur, ou autre lecture
+            # incertaine), un simple écart de compte mérite une vérification.
+            result.warnings.append(
+                f"Gemini a trouvé plus de trajets ({len(gemini_trajets)}) que l'OCR local "
+                f"({len(tesseract_trajets)}) : vérifie la liste (un trajet \"HLP\" à vide a pu "
+                "être compté par erreur, ou une autre lecture incertaine)."
+            )
     if missing_fields:
         result.warnings.append(
             "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)
