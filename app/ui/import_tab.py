@@ -329,8 +329,13 @@ class ImportTab(ttk.Frame):
                 self.summary_entries[field_name].set_decimal(value)
 
         self.trajet_listbox.delete(0, "end")
+        known_lignes = set(self.ligne_combo["values"])
         for label in extraction.trajets:
             self.trajet_listbox.insert("end", label)
+            ligne = split_trajet(label)[0]
+            if ligne:
+                known_lignes.add(ligne)
+        self.ligne_combo["values"] = sorted(known_lignes)
         self._update_trajets_count()
 
         if extraction.warnings:

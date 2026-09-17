@@ -9,13 +9,14 @@ from __future__ import annotations
 import base64
 import io
 import json
+import re
 import urllib.error
 import urllib.request
 
 from PIL import Image
 
 from app import ocr_engine
-from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES
+from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES, format_trajet
 
 MODEL_NAME = "gemini-3.5-flash-lite"
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -35,7 +36,9 @@ Deux types de blocs à bien distinguer :
 - Les vrais trajets de service (les seuls à extraire) sont les blocs identifiés par un code de
   service (ex: "164TATA1520 (164LVH..."), et leur texte utilise une BARRE OBLIQUE "/", ex:
   "TARARE HAUTS DE TARARE (RTRHT1) / TARARE AQUAVAL (RTRAQ) - QUAI - GIR. 16411", sur 1 ou 2
-  lignes.
+  lignes. Le numéro de ligne de ce trajet est les chiffres au tout début du code de service,
+  avant les lettres : "164TATA1520" -> ligne "164", "419SMTA0737" -> ligne "419",
+  "86TSLY0600" -> ligne "86".
 
 Ces blocs de trajet (avec code de service, séparateur "/") se répètent souvent 8 à 15 fois sur la
 page, parfois avec des lignes très similaires les unes aux autres (ex: le même aller-retour répété
@@ -75,9 +78,12 @@ Réponds uniquement avec les champs demandés par le schéma :
   plus grave qu'une valeur légèrement imprécise)
 - "trajets" : liste des VRAIS trajets de service (avec code de service, séparateur "/") tels
   qu'ils apparaissent dans le tableau, un par ligne rencontrée (les doublons sont normaux et
-  voulus), chacun normalisé en "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre
-  alphabétique, sans les codes entre parenthèses ni la mention GIR/QUAI). N'INCLUS JAMAIS les
-  blocs "HLP" (trajet à vide sans passager, séparateur "->", sans code de service).
+  voulus). N'INCLUS JAMAIS les blocs "HLP" (trajet à vide sans passager, séparateur "->", sans
+  code de service). Chaque entrée est un objet avec :
+  - "ligne" : le numéro de ligne (voir ci-dessus), en chiffres uniquement, sans les lettres qui
+    suivent ; chaîne vide si tu ne le trouves vraiment pas
+  - "trajet" : "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre alphabétique, sans les
+    codes entre parenthèses ni la mention GIR/QUAI)
 - "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus, y compris ceux du
   tableau récapitulatif où tu as dû deviner (vide seulement si tout est clair)
 """
@@ -93,7 +99,17 @@ RESPONSE_SCHEMA = {
             "properties": {name: {"type": "NUMBER"} for name in SUMMARY_FIELD_NAMES},
             "required": list(SUMMARY_FIELD_NAMES),
         },
-        "trajets": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "trajets": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "ligne": {"type": "STRING"},
+                    "trajet": {"type": "STRING"},
+                },
+                "required": ["ligne", "trajet"],
+            },
+        },
         "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
     },
     "required": ["driver_name", "matricule", "date", "summary", "trajets"],
@@ -280,9 +296,17 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         else:
             missing_fields.append(label)
 
-    gemini_trajets = [
-        _normalize_trajet(str(t)) for t in (payload.get("trajets") or []) if str(t).strip()
-    ]
+    gemini_trajets = []
+    for entry in payload.get("trajets") or []:
+        if isinstance(entry, dict):
+            trajet_text = str(entry.get("trajet") or "").strip()
+            ligne = re.sub(r"\D", "", str(entry.get("ligne") or ""))
+        else:  # défense en profondeur si Gemini ignore le schéma et renvoie une simple chaîne
+            trajet_text = str(entry).strip()
+            ligne = ""
+        if not trajet_text:
+            continue
+        gemini_trajets.append(format_trajet(ligne, _normalize_trajet(trajet_text)))
     tesseract_trajets = _tesseract_trajets(pages)
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
     if tesseract_trajets and len(tesseract_trajets) > len(gemini_trajets):

@@ -45,10 +45,12 @@ statistiques par semaine / mois / année.
      reçue est traitée automatiquement, comme si elle avait été importée depuis le PC. Windows
      peut demander une autorisation de pare-feu la première fois (à accepter, sinon le téléphone
      ne peut pas joindre le PC).
-   - **Numéro de ligne** : en plus du trajet détecté (ex: "CHARMILLES / TARARE GARE"), tu peux
-     associer un numéro de ligne (ex: "164") à chaque trajet ajouté manuellement — pratique
-     quand tu fais plusieurs lignes différentes le même jour. Les numéros déjà utilisés sont
-     proposés automatiquement (pas besoin de les retaper à chaque fois).
+   - **Numéro de ligne** : chaque trajet peut être associé à un numéro de ligne (ex: "164 —
+     CHARMILLES / TARARE GARE") — pratique quand tu fais plusieurs lignes différentes le même
+     jour. Avec Gemini configuré, il est détecté automatiquement (lu depuis le code de service
+     sur l'OT, ex: "164TATA1520" → ligne 164) ; tu peux aussi le modifier (double-clique sur un
+     trajet) ou en ajouter un manuellement — les numéros déjà utilisés sont alors proposés
+     automatiquement (pas besoin de les retaper).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
