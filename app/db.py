@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS work_orders (
     dim_travail REAL DEFAULT 0,
     ferie REAL DEFAULT 0,
     tps_oc REAL DEFAULT 0,
-    trajets_up_to_date INTEGER DEFAULT 0
+    trajets_up_to_date INTEGER DEFAULT 0,
+    last_minute_change INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_work_orders_date ON work_orders(date);
@@ -88,6 +89,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(work_orders)").fetchall()}
     if "trajets_up_to_date" not in existing:
         conn.execute("ALTER TABLE work_orders ADD COLUMN trajets_up_to_date INTEGER DEFAULT 0")
+    if "last_minute_change" not in existing:
+        conn.execute("ALTER TABLE work_orders ADD COLUMN last_minute_change INTEGER DEFAULT 0")
 
     existing_payslip_cols = {row["name"] for row in conn.execute("PRAGMA table_info(payslips)").fetchall()}
     if "details_json" not in existing_payslip_cols:
@@ -104,6 +107,7 @@ def init_db() -> None:
 
 def _row_to_work_order(row: sqlite3.Row) -> WorkOrder:
     data = {k: row[k] for k in row.keys() if k not in ("id", "trajets_up_to_date")}
+    data["last_minute_change"] = bool(data.get("last_minute_change"))
     wo = WorkOrder(id=row["id"], **data)
     return wo
 
@@ -111,7 +115,7 @@ def _row_to_work_order(row: sqlite3.Row) -> WorkOrder:
 def insert_work_order(wo: WorkOrder) -> int:
     with connect() as conn:
         cols = ["date", "driver_name", "matricule", "source_filename", "source_type",
-                "notes", "created_at"] + SUMMARY_FIELD_NAMES
+                "notes", "created_at"] + SUMMARY_FIELD_NAMES + ["last_minute_change"]
         values = [getattr(wo, c) for c in cols]
         if not wo.created_at:
             values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
@@ -134,7 +138,7 @@ def update_work_order(wo: WorkOrder) -> None:
         raise ValueError("work order without id cannot be updated")
     with connect() as conn:
         cols = ["date", "driver_name", "matricule", "source_filename", "source_type",
-                "notes"] + SUMMARY_FIELD_NAMES
+                "notes"] + SUMMARY_FIELD_NAMES + ["last_minute_change"]
         assignments = ", ".join(f"{c} = ?" for c in cols)
         values = [getattr(wo, c) for c in cols] + [wo.id]
         # L'utilisateur vient de revoir/enregistrer cet OT à la main : on ne le retraitera plus

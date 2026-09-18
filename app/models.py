@@ -78,6 +78,11 @@ class WorkOrder:
     ferie: float = 0.0
     tps_oc: float = 0.0
 
+    # Service modifié/édité moins de 48h avant la prise de service (donne droit à une prime
+    # selon la convention collective) - détecté depuis la date d'édition de l'OT si Gemini est
+    # configuré, sinon coché/décoché à la main (voir gemini_engine.extract_from_pages).
+    last_minute_change: bool = False
+
     trajets: list[str] = field(default_factory=list)
 
 
@@ -108,6 +113,7 @@ class ExtractionResult:
     date: str = ""  # ISO si détectée, sinon ""
     summary: dict[str, float] = field(default_factory=dict)
     trajets: list[str] = field(default_factory=list)
+    last_minute_change: bool = False
     raw_text_page1: str = ""
     raw_text_summary_row: str = ""
     warnings: list[str] = field(default_factory=list)

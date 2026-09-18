@@ -120,10 +120,16 @@ class StatsTab(ttk.Frame):
         year_sum = stats.summary_for_period(year_start, year_end)
         total_sum = stats.summary_for_period()
 
-        self.card_week.set(hours_to_hm(week_sum.tte), f"{week_sum.days} jour(s)")
-        self.card_month.set(hours_to_hm(month_sum.tte), f"{month_sum.days} jour(s)")
-        self.card_year.set(hours_to_hm(year_sum.tte), f"{year_sum.days} jour(s)")
-        self.card_total.set(hours_to_hm(total_sum.tte), f"{total_sum.days} jour(s)")
+        def _sub_text(period_sum) -> str:
+            text = f"{period_sum.days} jour(s)"
+            if period_sum.last_minute_count:
+                text += f" · {period_sum.last_minute_count} prime(s) dernière minute"
+            return text
+
+        self.card_week.set(hours_to_hm(week_sum.tte), _sub_text(week_sum))
+        self.card_month.set(hours_to_hm(month_sum.tte), _sub_text(month_sum))
+        self.card_year.set(hours_to_hm(year_sum.tte), _sub_text(year_sum))
+        self.card_total.set(hours_to_hm(total_sum.tte), _sub_text(total_sum))
 
         for child in self.chart_holder.winfo_children():
             child.destroy()

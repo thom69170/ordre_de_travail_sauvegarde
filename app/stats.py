@@ -80,6 +80,7 @@ class PeriodSummary:
     tps: float = 0.0
     ampli: float = 0.0
     tad: float = 0.0
+    last_minute_count: int = 0
 
 
 def summary_for_period(start_date: str | None = None, end_date: str | None = None) -> PeriodSummary:
@@ -90,6 +91,8 @@ def summary_for_period(start_date: str | None = None, end_date: str | None = Non
         summary.tps += wo.tps
         summary.ampli += wo.ampli
         summary.tad += wo.tad
+        if wo.last_minute_change:
+            summary.last_minute_count += 1
     return summary
 
 

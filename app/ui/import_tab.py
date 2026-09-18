@@ -144,6 +144,14 @@ class ImportTab(ttk.Frame):
         self.save_btn = ttk.Button(header, text="Enregistrer", command=self.save)
         self.save_btn.pack(side="left")
 
+        header_row2 = ttk.Frame(header)
+        header_row2.pack(fill="x", pady=(8, 0))
+        self.last_minute_var = tk.BooleanVar(value=False)
+        self.last_minute_check = ttk.Checkbutton(
+            header_row2, text="Changement de dernière minute (prime)", variable=self.last_minute_var,
+        )
+        self.last_minute_check.pack(side="left")
+
         summary_frame = ttk.LabelFrame(form, text="Récapitulatif (centièmes d'heure)", padding=10)
         summary_frame.pack(fill="x", padx=4, pady=6)
         cols = 4
@@ -348,6 +356,8 @@ class ImportTab(ttk.Frame):
         if extraction is None:
             return
 
+        self.last_minute_var.set(bool(extraction.last_minute_change))
+
         if extraction.date:
             try:
                 self.date_entry.set(date.fromisoformat(extraction.date).strftime("%d/%m/%Y"))
@@ -467,6 +477,7 @@ class ImportTab(ttk.Frame):
         self.date_entry.set(date.fromisoformat(work_order.date).strftime("%d/%m/%Y"))
         self.name_entry.set(work_order.driver_name)
         self.matricule_entry.set(work_order.matricule)
+        self.last_minute_var.set(bool(work_order.last_minute_change))
         for field_name, _label in SUMMARY_FIELDS:
             self.summary_entries[field_name].set_decimal(getattr(work_order, field_name))
         self.trajet_listbox.delete(0, "end")
@@ -502,6 +513,7 @@ class ImportTab(ttk.Frame):
         self.date_entry.set(date.today().strftime("%d/%m/%Y"))
         self.name_entry.set("")
         self.matricule_entry.set("")
+        self.last_minute_var.set(False)
         for entry in self.summary_entries.values():
             entry.set_decimal(0.0)
         self.trajet_listbox.delete(0, "end")
@@ -541,6 +553,7 @@ class ImportTab(ttk.Frame):
             matricule=self.matricule_entry.get().strip(),
             notes=self.notes_text.get("1.0", "end").strip(),
             trajets=list(self.trajet_listbox.get(0, "end")),
+            last_minute_change=self.last_minute_var.get(),
         )
         for field_name, _label in SUMMARY_FIELDS:
             setattr(wo, field_name, self.summary_entries[field_name].get_decimal())

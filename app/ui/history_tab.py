@@ -7,6 +7,7 @@ from tkinter import messagebox, ttk
 
 from app import db, storage
 from app.stats import FRENCH_MONTHS, hours_to_hm
+from app.ui.common import WARN_BG
 
 ALL_MONTHS = "Tous les mois"
 
@@ -39,16 +40,21 @@ class HistoryTab(ttk.Frame):
 
         ttk.Button(top, text="Actualiser", command=self.refresh).pack(side="left", padx=12)
 
-        columns = ("date", "conducteur", "tps", "tte", "ampli", "trajets")
+        columns = ("date", "conducteur", "tps", "tte", "ampli", "derniere_minute", "trajets")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
         headings = {
             "date": "Date", "conducteur": "Conducteur", "tps": "TPS",
-            "tte": "TTE (travail)", "ampli": "Amplitude", "trajets": "Trajets",
+            "tte": "TTE (travail)", "ampli": "Amplitude", "derniere_minute": "Dernière minute",
+            "trajets": "Trajets",
         }
-        widths = {"date": 110, "conducteur": 200, "tps": 90, "tte": 110, "ampli": 100, "trajets": 300}
+        widths = {
+            "date": 110, "conducteur": 200, "tps": 90, "tte": 110, "ampli": 100,
+            "derniere_minute": 110, "trajets": 300,
+        }
         for col in columns:
             self.tree.heading(col, text=headings[col])
             self.tree.column(col, width=widths[col], anchor="w")
+        self.tree.tag_configure("last_minute", background=WARN_BG)
         self.tree.bind("<Double-1>", lambda e: self.edit_selected())
 
         # Empaquetée avant le tableau (avec side="bottom") pour garder cette barre toujours
@@ -96,13 +102,16 @@ class HistoryTab(ttk.Frame):
                 display_date = wo.date
             self.tree.insert("", "end", iid=str(wo.id), values=(
                 display_date, wo.driver_name, hours_to_hm(wo.tps), hours_to_hm(wo.tte),
-                hours_to_hm(wo.ampli), ", ".join(sorted(set(wo.trajets))),
-            ))
+                hours_to_hm(wo.ampli), "Oui" if wo.last_minute_change else "",
+                ", ".join(sorted(set(wo.trajets))),
+            ), tags=("last_minute",) if wo.last_minute_change else ())
             total_tte += wo.tte
+        last_minute_count = sum(1 for wo in orders if wo.last_minute_change)
 
-        self.summary_label.config(
-            text=f"{len(orders)} jour(s) · total temps de travail : {hours_to_hm(total_tte)}"
-        )
+        summary_text = f"{len(orders)} jour(s) · total temps de travail : {hours_to_hm(total_tte)}"
+        if last_minute_count:
+            summary_text += f" · {last_minute_count} changement(s) de dernière minute"
+        self.summary_label.config(text=summary_text)
 
     def _selected_id(self) -> int | None:
         sel = self.tree.selection()

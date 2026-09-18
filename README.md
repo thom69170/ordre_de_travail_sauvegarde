@@ -59,6 +59,13 @@ statistiques par semaine / mois / année.
      anciens OT jamais retouchés depuis leur import, pour leur appliquer la nouvelle logique —
      un message s'affiche une fois que c'est fait. Seuls les trajets sont concernés (jamais les
      autres champs), et un OT que tu as déjà corrigé/réenregistré à la main n'est jamais touché.
+   - **Changement de dernière minute (prime)** : case à cocher qui signale qu'un service a été
+     modifié moins de 48h avant la prise de service (donne droit à une prime selon la convention
+     collective). Avec Gemini configuré, elle est cochée automatiquement en comparant la date
+     d'édition de l'OT (ligne "Edition du JJ/MM/AAAA à HH:MM" en haut du document) à l'heure de
+     prise de service — vérifie toujours, et corrige à la main si besoin (sans Gemini, coche-la
+     toi-même). Visible aussi dans **Historique** (colonne dédiée, ligne surlignée) et dans
+     **Statistiques** (nombre de primes sur la période).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.

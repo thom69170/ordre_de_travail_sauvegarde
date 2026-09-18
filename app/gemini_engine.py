@@ -12,6 +12,7 @@ import json
 import re
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta
 
 from PIL import Image
 
@@ -21,6 +22,11 @@ from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES, fo
 MODEL_NAME = "gemini-3.5-flash-lite"
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 TIMEOUT_SECONDS = 60
+
+# Un service édité (voir "edition_date"/"edition_time" dans le schéma) moins de 48h avant
+# l'heure de prise de service donne droit à une prime "changement de dernière minute" selon la
+# convention collective de l'utilisateur.
+LAST_MINUTE_THRESHOLD = timedelta(hours=48)
 
 PROMPT = """Tu analyses un "ordre de travail" (feuille de route) d'un conducteur de bus/car en France.
 Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique le nom du conducteur,
@@ -94,6 +100,14 @@ Réponds uniquement avec les champs demandés par le schéma :
     codes entre parenthèses ni la mention GIR/QUAI)
 - "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus, y compris ceux du
   tableau récapitulatif où tu as dû deviner (vide seulement si tout est clair)
+
+En haut de la première page figure aussi une ligne "Edition du JJ/MM/AAAA à HH:MM" (parfois
+répétée plusieurs fois à cause de la mise en page du document) : c'est la date et l'heure
+d'impression/modification de cet ordre de travail. Dans le tableau des services, la toute
+première ligne est toujours celle de "PRISE DE SERVICE" ; la première heure de sa colonne
+"HEURE Début Fin" (ex: "06h45" dans "06h45 07h00") est l'heure de prise de service. Renvoie ces
+informations dans "edition_date" (AAAA-MM-JJ), "edition_time" (HH:MM) et "prise_service_time"
+(HH:MM). Laisse-les vides si tu ne les trouves vraiment pas, plutôt que de deviner.
 """
 
 RESPONSE_SCHEMA = {
@@ -102,6 +116,9 @@ RESPONSE_SCHEMA = {
         "driver_name": {"type": "STRING"},
         "matricule": {"type": "STRING"},
         "date": {"type": "STRING"},
+        "edition_date": {"type": "STRING"},
+        "edition_time": {"type": "STRING"},
+        "prise_service_time": {"type": "STRING"},
         "summary": {
             "type": "OBJECT",
             "properties": {name: {"type": "NUMBER"} for name in SUMMARY_FIELD_NAMES},
@@ -126,6 +143,41 @@ RESPONSE_SCHEMA = {
 
 class GeminiError(Exception):
     pass
+
+
+def _parse_hhmm(text: str) -> tuple[int, int] | None:
+    match = re.match(r"^\s*(\d{1,2})[hH:](\d{2})\s*$", text or "")
+    if not match:
+        return None
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if 0 <= hour <= 23 and 0 <= minute <= 59:
+        return hour, minute
+    return None
+
+
+def _detect_last_minute_change(
+    service_date: str, edition_date: str, edition_time: str, prise_service_time: str
+) -> bool:
+    """Compare la date/heure d'édition de l'OT à l'heure de prise de service : moins de 48h
+    d'écart entre les deux = changement de dernière minute (voir LAST_MINUTE_THRESHOLD)."""
+    try:
+        service_dt = datetime.fromisoformat(service_date)
+    except ValueError:
+        return False
+    try:
+        edition_dt = datetime.fromisoformat(edition_date)
+    except ValueError:
+        return False
+
+    hm = _parse_hhmm(prise_service_time)
+    if hm:
+        service_dt = service_dt.replace(hour=hm[0], minute=hm[1])
+    hm = _parse_hhmm(edition_time)
+    if hm:
+        edition_dt = edition_dt.replace(hour=hm[0], minute=hm[1])
+
+    delta = service_dt - edition_dt
+    return timedelta(0) <= delta < LAST_MINUTE_THRESHOLD
 
 
 def _normalize_trajet(raw: str) -> str:
@@ -295,6 +347,13 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
     result.matricule = str(payload.get("matricule") or "").strip()
     result.date = str(payload.get("date") or "").strip()
 
+    edition_date = str(payload.get("edition_date") or "").strip()
+    edition_time = str(payload.get("edition_time") or "").strip()
+    prise_service_time = str(payload.get("prise_service_time") or "").strip()
+    result.last_minute_change = _detect_last_minute_change(
+        result.date, edition_date, edition_time, prise_service_time
+    )
+
     summary_raw = payload.get("summary") or {}
     missing_fields = []
     for name, label in SUMMARY_FIELDS:
@@ -340,6 +399,12 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         result.warnings.append(
             "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)
             + " (mis à 0 par défaut, à vérifier)."
+        )
+    if result.last_minute_change:
+        result.warnings.append(
+            f"Service édité le {edition_date} à {edition_time or '?'}, moins de 48h avant la "
+            "prise de service : changement de dernière minute détecté, case cochée "
+            "automatiquement - vérifie si la prime associée s'applique."
         )
     if not zoom_found:
         result.warnings.append(
