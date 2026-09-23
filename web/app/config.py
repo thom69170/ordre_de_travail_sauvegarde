@@ -10,3 +10,9 @@ DATABASE_URL = os.environ.get(
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+
+PAYPAL_MODE = os.environ.get("PAYPAL_MODE", "sandbox").strip().lower()
+PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID", "").strip()
+PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET", "").strip()
+PAYPAL_PLAN_ID = os.environ.get("PAYPAL_PLAN_ID", "").strip()
+PAYPAL_WEBHOOK_ID = os.environ.get("PAYPAL_WEBHOOK_ID", "").strip()

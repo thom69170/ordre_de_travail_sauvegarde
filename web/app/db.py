@@ -106,6 +106,13 @@ def connect():
 def init_db() -> None:
     with connect() as conn:
         conn.execute(SCHEMA)
+        # Colonnes ajoutées après la création initiale de la table (installations déjà en
+        # place) : ADD COLUMN IF NOT EXISTS est idempotent, safe à rejouer à chaque démarrage.
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_exempt BOOLEAN DEFAULT FALSE")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS paypal_subscription_id TEXT")
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'none'"
+        )
 
 
 # --- Utilisateurs ---------------------------------------------------------
@@ -129,6 +136,38 @@ def get_user_by_email(email: str) -> dict | None:
 def get_user(user_id: int) -> dict | None:
     with connect() as conn:
         return conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
+
+
+def has_active_access(user: dict) -> bool:
+    return bool(user.get("is_exempt")) or user.get("subscription_status") == "active"
+
+
+def set_exempt(user_id: int, exempt: bool = True) -> None:
+    with connect() as conn:
+        conn.execute("UPDATE users SET is_exempt = %s WHERE id = %s", (exempt, user_id))
+
+
+def set_subscription(user_id: int, subscription_id: str, status: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET paypal_subscription_id = %s, subscription_status = %s WHERE id = %s",
+            (subscription_id, status, user_id),
+        )
+
+
+def get_user_by_subscription(subscription_id: str) -> dict | None:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM users WHERE paypal_subscription_id = %s", (subscription_id,)
+        ).fetchone()
+
+
+def set_subscription_status_by_id(subscription_id: str, status: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET subscription_status = %s WHERE paypal_subscription_id = %s",
+            (status, subscription_id),
+        )
 
 
 # --- Ordres de travail ------------------------------------------------------

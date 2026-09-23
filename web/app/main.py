@@ -12,11 +12,26 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app import auth, db, extraction, ocr_engine, payslip_parser, stats, storage
-from app.config import DATA_DIR
+from app import auth, db, extraction, ocr_engine, payslip_parser, paypal, stats, storage
+from app.config import DATA_DIR, PAYPAL_CLIENT_ID, PAYPAL_PLAN_ID, PAYPAL_WEBHOOK_ID
 from app.models import SUMMARY_FIELD_NAMES, Payslip, WorkOrder, split_trajet
 
 app = FastAPI(title="Ordre de travail")
+
+# Chemins accessibles sans abonnement actif : la page d'abonnement elle-même, l'auth, et les
+# assets statiques. Tout le reste est bloqué (redirigé vers /billing) pour un compte connecté
+# sans accès actif (voir db.has_active_access).
+GATE_ALLOWLIST_PREFIXES = ("/billing", "/login", "/register", "/logout", "/static", "/health")
+
+
+@app.middleware("http")
+async def subscription_gate(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith(GATE_ALLOWLIST_PREFIXES):
+        user = auth.get_current_user(request)
+        if user and not db.has_active_access(user):
+            return RedirectResponse("/billing", status_code=303)
+    return await call_next(request)
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -486,3 +501,92 @@ def payslip_delete(request: Request, payslip_id: int):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# --- Abonnement PayPal ---------------------------------------------------
+
+@app.get("/billing", response_class=HTMLResponse)
+def billing_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    return templates.TemplateResponse(
+        "billing.html",
+        {
+            "request": request,
+            "user": user,
+            "has_access": db.has_active_access(user),
+            "paypal_client_id": PAYPAL_CLIENT_ID,
+            "paypal_plan_id": PAYPAL_PLAN_ID,
+        },
+    )
+
+
+@app.post("/billing/confirm")
+async def billing_confirm(request: Request):
+    user = _current_user(request)
+    if not user:
+        return {"ok": False}
+    body = await request.json()
+    subscription_id = body.get("subscription_id", "")
+    if not subscription_id:
+        return {"ok": False}
+
+    try:
+        sub = paypal.get_subscription(subscription_id)
+    except paypal.PayPalError:
+        return {"ok": False}
+
+    if sub.get("plan_id") != PAYPAL_PLAN_ID:
+        return {"ok": False}
+
+    status = "active" if sub.get("status") == "ACTIVE" else "none"
+    db.set_subscription(user["id"], subscription_id, status)
+    return {"ok": status == "active"}
+
+
+@app.post("/billing/cancel")
+def billing_cancel(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    sub_id = user.get("paypal_subscription_id")
+    if sub_id:
+        try:
+            paypal.cancel_subscription(sub_id)
+        except paypal.PayPalError:
+            pass
+        db.set_subscription(user["id"], sub_id, "cancelled")
+    return _redirect("/billing")
+
+
+@app.post("/billing/webhook")
+async def billing_webhook(request: Request):
+    raw_body = await request.body()
+    body_text = raw_body.decode("utf-8")
+    headers = {k.lower(): v for k, v in request.headers.items()}
+
+    try:
+        verified = paypal.verify_webhook_signature(headers, body_text, PAYPAL_WEBHOOK_ID)
+    except paypal.PayPalError:
+        verified = False
+    if not verified:
+        return {"ok": False}
+
+    event = json.loads(body_text)
+    event_type = event.get("event_type", "")
+    resource = event.get("resource", {})
+    subscription_id = resource.get("id") or resource.get("billing_agreement_id")
+    if not subscription_id:
+        return {"ok": True}
+
+    if event_type == "BILLING.SUBSCRIPTION.ACTIVATED":
+        db.set_subscription_status_by_id(subscription_id, "active")
+    elif event_type in (
+        "BILLING.SUBSCRIPTION.CANCELLED",
+        "BILLING.SUBSCRIPTION.EXPIRED",
+        "BILLING.SUBSCRIPTION.SUSPENDED",
+    ):
+        db.set_subscription_status_by_id(subscription_id, "cancelled")
+
+    return {"ok": True}

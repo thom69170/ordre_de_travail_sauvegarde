@@ -19,6 +19,11 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
       DATA_DIR: /data
+      PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_PLAN_ID: ${PAYPAL_PLAN_ID:-}
+      PAYPAL_WEBHOOK_ID: ${PAYPAL_WEBHOOK_ID:-}
     volumes:
       - app_data:/data
     depends_on:

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Abonnement{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Abonnement</h1>
+
+  {% if has_access %}
+    {% if user.is_exempt %}
+    <p>Votre compte a un accès gratuit permanent.</p>
+    {% else %}
+    <p>Abonnement actif — 1 €/mois les 6 premiers mois, puis 2 €/mois. Résiliable à tout moment.</p>
+    <form method="post" action="/billing/cancel" onsubmit="return confirm('Résilier l\'abonnement ? Tu perdras l\'accès immédiatement.');">
+      <button type="submit" class="btn danger">Résilier l'abonnement</button>
+    </form>
+    {% endif %}
+  {% else %}
+    <p class="muted">
+      Un abonnement est nécessaire pour utiliser l'application : <strong>1 €/mois pendant 6 mois,
+      puis 2 €/mois</strong>. Résiliable à tout moment depuis cette page.
+    </p>
+    <div id="paypal-button-container" style="max-width:360px;margin-top:16px;"></div>
+    <p id="billing-error" class="error" style="display:none;"></p>
+
+    <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&vault=true&intent=subscription&currency=EUR"></script>
+    <script>
+      paypal.Buttons({
+        style: { shape: "pill", color: "blue", layout: "vertical", label: "subscribe" },
+        createSubscription: function(data, actions) {
+          return actions.subscription.create({ plan_id: "{{ paypal_plan_id }}" });
+        },
+        onApprove: function(data) {
+          fetch("/billing/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subscription_id: data.subscriptionID })
+          })
+          .then(r => r.json())
+          .then(function(res) {
+            if (res.ok) {
+              window.location = "/history";
+            } else {
+              document.getElementById("billing-error").style.display = "block";
+              document.getElementById("billing-error").textContent =
+                "L'abonnement n'a pas pu être confirmé. Réessaie ou contacte le support.";
+            }
+          });
+        }
+      }).render("#paypal-button-container");
+    </script>
+  {% endif %}
+</div>
+{% endblock %}
