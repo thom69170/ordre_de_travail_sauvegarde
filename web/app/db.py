@@ -79,6 +79,17 @@ CREATE TABLE IF NOT EXISTS payslips (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payslips_user_period ON payslips(user_id, period_start);
+
+CREATE TABLE IF NOT EXISTS import_jobs (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    result_json TEXT DEFAULT '',
+    error_message TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_import_jobs_user ON import_jobs(user_id);
 """
 
 
@@ -133,6 +144,7 @@ def insert_work_order(user_id: int, wo: WorkOrder) -> int:
         cols = ["date", "driver_name", "matricule", "source_filename", "source_type",
                 "notes", "created_at"] + SUMMARY_FIELD_NAMES + ["last_minute_change"]
         values = [getattr(wo, c) for c in cols]
+        values[cols.index("last_minute_change")] = int(wo.last_minute_change)
         if not wo.created_at:
             values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
         placeholders = ", ".join(["%s"] * len(cols))
@@ -152,8 +164,10 @@ def update_work_order(user_id: int, wo: WorkOrder) -> None:
     with connect() as conn:
         cols = ["date", "driver_name", "matricule", "source_filename", "source_type",
                 "notes"] + SUMMARY_FIELD_NAMES + ["last_minute_change"]
+        values = [getattr(wo, c) for c in cols]
+        values[cols.index("last_minute_change")] = int(wo.last_minute_change)
         assignments = ", ".join(f"{c} = %s" for c in cols)
-        values = [getattr(wo, c) for c in cols] + [wo.id, user_id]
+        values = values + [wo.id, user_id]
         conn.execute(
             f"UPDATE work_orders SET {assignments}, trajets_up_to_date = 1 "
             f"WHERE id = %s AND user_id = %s",
@@ -269,3 +283,52 @@ def list_payslips(user_id: int) -> list[Payslip]:
             "SELECT * FROM payslips WHERE user_id = %s ORDER BY period_start DESC", (user_id,)
         ).fetchall()
     return [_row_to_payslip(r) for r in rows]
+
+
+# --- Imports en cours (extraction en arrière-plan) --------------------------
+
+def create_import_job(token: str, user_id: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO import_jobs (id, user_id, status, created_at) VALUES (%s, %s, 'pending', %s)",
+            (token, user_id, datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def set_import_job_result(token: str, result: dict) -> None:
+    import json as _json
+
+    with connect() as conn:
+        conn.execute(
+            "UPDATE import_jobs SET status = 'done', result_json = %s WHERE id = %s",
+            (_json.dumps(result, ensure_ascii=False), token),
+        )
+
+
+def set_import_job_error(token: str, message: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "UPDATE import_jobs SET status = 'error', error_message = %s WHERE id = %s",
+            (message, token),
+        )
+
+
+def get_import_job(user_id: int, token: str) -> dict | None:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM import_jobs WHERE id = %s AND user_id = %s", (token, user_id)
+        ).fetchone()
+
+
+def list_pending_import_jobs(user_id: int) -> list[dict]:
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM import_jobs WHERE user_id = %s ORDER BY created_at DESC", (user_id,)
+        ).fetchall()
+
+
+def delete_import_job(user_id: int, token: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM import_jobs WHERE id = %s AND user_id = %s", (token, user_id)
+        )

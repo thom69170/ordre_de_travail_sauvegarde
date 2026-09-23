@@ -6,7 +6,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -115,17 +115,43 @@ def import_page(request: Request):
     user = _current_user(request)
     if not user:
         return _redirect("/login")
-    return templates.TemplateResponse("import.html", {"request": request, "user": user})
+    pending = db.list_pending_import_jobs(user["id"])
+    return templates.TemplateResponse(
+        "import.html", {"request": request, "user": user, "pending": pending}
+    )
+
+
+def _run_extraction_job(token: str, paths: list[Path]) -> None:
+    """Exécuté en arrière-plan (threadpool) par BackgroundTasks : l'utilisateur peut quitter
+    la page pendant ce temps, voir GET /import/status/{token}."""
+    try:
+        pages = []
+        for p in paths:
+            pages.extend(ocr_engine.load_pages(p))
+        result = extraction.extract_from_pages(pages)
+        db.set_import_job_result(token, {
+            "driver_name": result.driver_name,
+            "matricule": result.matricule,
+            "date": result.date,
+            "summary": result.summary,
+            "trajets": result.trajets,
+            "last_minute_change": result.last_minute_change,
+            "warnings": result.warnings,
+        })
+    except Exception as exc:  # noqa: BLE001
+        db.set_import_job_error(token, str(exc))
 
 
 @app.post("/import", response_class=HTMLResponse)
-async def import_upload(request: Request, files: list[UploadFile]):
+async def import_upload(request: Request, files: list[UploadFile], background_tasks: BackgroundTasks):
     user = _current_user(request)
     if not user:
         return _redirect("/login")
     if not files or not files[0].filename:
         return templates.TemplateResponse(
-            "import.html", {"request": request, "user": user, "error": "Choisis au moins un fichier."}
+            "import.html",
+            {"request": request, "user": user, "pending": db.list_pending_import_jobs(user["id"]),
+             "error": "Choisis au moins un fichier."},
         )
 
     token = uuid.uuid4().hex
@@ -138,13 +164,34 @@ async def import_upload(request: Request, files: list[UploadFile]):
             shutil.copyfileobj(f.file, out)
         saved_paths.append(dest)
 
-    pages = []
-    for p in saved_paths:
-        pages.extend(ocr_engine.load_pages(p))
-    result = extraction.extract_from_pages(pages)
+    db.create_import_job(token, user["id"])
+    background_tasks.add_task(_run_extraction_job, token, saved_paths)
 
+    return _redirect(f"/import/status/{token}")
+
+
+@app.get("/import/status/{token}", response_class=HTMLResponse)
+def import_status(request: Request, token: str):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    job = db.get_import_job(user["id"], token)
+    if job is None:
+        return _redirect("/import")
+
+    if job["status"] == "pending":
+        return templates.TemplateResponse(
+            "import_processing.html", {"request": request, "user": user, "token": token}
+        )
+
+    if job["status"] == "error":
+        return templates.TemplateResponse(
+            "import_error.html",
+            {"request": request, "user": user, "token": token, "error": job["error_message"]},
+        )
+
+    result = json.loads(job["result_json"])
     known_lignes = db.list_known_lignes(user["id"])
-
     return templates.TemplateResponse(
         "import_review.html",
         {
@@ -153,10 +200,31 @@ async def import_upload(request: Request, files: list[UploadFile]):
             "token": token,
             "result": result,
             "summary_fields": SUMMARY_FIELD_NAMES,
-            "trajets_text": "\n".join(result.trajets),
+            "trajets_text": "\n".join(result["trajets"]),
             "known_lignes": known_lignes,
         },
     )
+
+
+@app.post("/import/status/{token}/discard")
+def import_discard(request: Request, token: str):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    db.delete_import_job(user["id"], token)
+    shutil.rmtree(TMP_DIR / token, ignore_errors=True)
+    return _redirect("/import")
+
+
+@app.get("/import/status/{token}/check")
+def import_status_check(request: Request, token: str):
+    """Petit endpoint JSON interrogé par la page d'attente (évite de recharger toute la page
+    tant que l'extraction n'est pas terminée)."""
+    user = _current_user(request)
+    if not user:
+        return {"status": "error"}
+    job = db.get_import_job(user["id"], token)
+    return {"status": job["status"] if job else "error"}
 
 
 @app.post("/import/save")
@@ -190,6 +258,7 @@ async def import_save(request: Request):
     wo.source_type = source_type
 
     db.insert_work_order(user["id"], wo)
+    db.delete_import_job(user["id"], token)
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return _redirect("/history")
