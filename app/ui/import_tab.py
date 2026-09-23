@@ -58,13 +58,21 @@ class ImportTab(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent)
         self.app = app
-        self.current_path: Path | None = None
+        # Fichiers source du document en cours (1 pour un OT classique, plusieurs pour un OT
+        # capturé en plusieurs photos - une par page - combinées en un seul PDF à l'enregistrement,
+        # voir storage.store_source_files).
+        self.current_source_paths: list[Path] = []
         self.current_pages: list[Image.Image] | None = None
         self.editing_id: int | None = None
         self._thumbnail_imgtk = None
         self._editing_trajet_index: int | None = None
         self.summary_entries: dict[str, LabeledEntry] = {}
-        self._phone_queue: list[Path] = []
+        # File d'attente des documents reçus du téléphone (chacun une liste de 1+ chemins - une
+        # page envoyée en "ajout" rejoint le document précédent au lieu de former un nouveau
+        # document, voir _receive_file_from_phone).
+        self._phone_queue: list[list[Path]] = []
+        self._pending_append_target: list[Path] | None = None
+        self._extraction_token = 0
 
         self._build_ui()
         self._maybe_show_ocr_banner()
@@ -257,15 +265,25 @@ class ImportTab(ttk.Frame):
     # ------------------------------------------------------------- actions
 
     def choose_file(self):
-        path_str = filedialog.askopenfilename(title="Choisir un ordre de travail", filetypes=FILE_TYPES)
-        if not path_str:
+        paths_str = filedialog.askopenfilenames(
+            title="Choisir un ordre de travail (plusieurs fichiers = les pages d'un même OT)",
+            filetypes=FILE_TYPES,
+        )
+        if not paths_str:
             return
-        self.reset_form(keep_file_dialog_open=True)
-        path = Path(path_str)
-        self.current_path = path
-        self.file_label.config(text=path.name)
-        self._set_processing(True)
-        threading.Thread(target=self._process_file, args=(path,), daemon=True).start()
+        # Trié par date de modification plutôt que par nom : les photos prises à la suite avec
+        # le téléphone n'ont pas forcément un nom qui trie dans l'ordre des pages.
+        paths = sorted((Path(p) for p in paths_str), key=lambda p: p.stat().st_mtime)
+        if self.current_source_paths:
+            if messagebox.askyesno(
+                "Ajouter une page ?",
+                "Un document est déjà chargé. Ajouter ce(s) fichier(s) comme page(s) "
+                "supplémentaire(s) du même OT (Oui), ou remplacer par un nouvel OT (Non) ?",
+            ):
+                self.current_source_paths.extend(paths)
+                self._load_document(self.current_source_paths, is_append=True)
+                return
+        self._load_document(paths)
 
     def _open_phone_upload_dialog(self):
         from app.ui.phone_upload_dialog import PhoneUploadDialog
@@ -274,28 +292,38 @@ class ImportTab(ttk.Frame):
             self.winfo_toplevel(),
             on_file_received=self._receive_file_from_phone,
             waiting_text="En attente d'une photo... (tu peux en envoyer plusieurs à la suite)",
+            multiple=True,
         )
 
-    def _receive_file_from_phone(self, path: Path):
-        # Le téléphone peut envoyer plusieurs fichiers à la suite avec le même QR code : on les
-        # empile et on ne charge le suivant que quand le formulaire actuel a été enregistré ou
-        # réinitialisé, pour ne jamais écraser une analyse en cours ou pas encore relue.
-        self._phone_queue.append(path)
+    def _receive_file_from_phone(self, path: Path, is_append: bool = False):
+        # Le téléphone peut envoyer plusieurs fichiers à la suite avec le même QR code. Une page
+        # envoyée en "ajout" (plusieurs fichiers sélectionnés ensemble sur le téléphone pour un
+        # même OT sur plusieurs pages) rejoint le document auquel elle appartient - qu'il soit
+        # déjà en cours de traitement ou encore en attente dans la file - au lieu de former un
+        # nouveau document. Sinon, un nouveau document est mis en file : il n'est chargé que
+        # quand le formulaire actuel a été enregistré ou réinitialisé, pour ne jamais écraser une
+        # analyse en cours ou pas encore relue.
+        if is_append and self._pending_append_target is not None:
+            self._pending_append_target.append(path)
+            if self._pending_append_target is self.current_source_paths:
+                self._load_document(self.current_source_paths, " (reçu du téléphone)", is_append=True)
+            else:
+                self._update_queue_label()
+            return
+        group: list[Path] = [path]
+        self._pending_append_target = group
+        self._phone_queue.append(group)
         self._maybe_start_next_from_queue()
 
     def _maybe_start_next_from_queue(self):
         self._update_queue_label()
-        if self.current_path is not None or self.editing_id is not None:
+        if self.current_source_paths or self.editing_id is not None:
             return
         if not self._phone_queue:
             return
-        path = self._phone_queue.pop(0)
+        group = self._phone_queue.pop(0)
         self._update_queue_label()
-        self.reset_form(keep_file_dialog_open=True)
-        self.current_path = path
-        self.file_label.config(text=f"{path.name} (reçu du téléphone)")
-        self._set_processing(True)
-        threading.Thread(target=self._process_file, args=(path,), daemon=True).start()
+        self._load_document(group, " (reçu du téléphone)")
 
     def _update_queue_label(self):
         n = len(self._phone_queue)
@@ -306,6 +334,27 @@ class ImportTab(ttk.Frame):
     def _on_reset_clicked(self):
         self.reset_form()
         self._maybe_start_next_from_queue()
+
+    def _load_document(self, paths: list[Path], label_suffix: str = "", is_append: bool = False):
+        if not is_append:
+            self.reset_form(keep_file_dialog_open=True)
+            self.current_source_paths = paths
+        self._update_file_label(label_suffix)
+        self._set_processing(True)
+        self._extraction_token += 1
+        token = self._extraction_token
+        threading.Thread(target=self._process_files, args=(list(paths), token), daemon=True).start()
+
+    def _update_file_label(self, suffix: str = ""):
+        paths = self.current_source_paths
+        if not paths:
+            self.file_label.config(text="Aucun fichier sélectionné")
+        elif len(paths) == 1:
+            self.file_label.config(text=f"{paths[0].name}{suffix}")
+        else:
+            self.file_label.config(
+                text=f"{len(paths)} pages : {', '.join(p.name for p in paths)}{suffix}"
+            )
 
     def _set_processing(self, active: bool):
         """Rend l'analyse en cours difficile à manquer (barre de progression animée + texte en
@@ -322,11 +371,15 @@ class ImportTab(ttk.Frame):
             self.status_label.config(text="")
         self.update_idletasks()
 
-    def _process_file(self, path: Path):
+    def _process_files(self, paths: list[Path], token: int):
         try:
-            pages = ocr_engine.load_pages(path)
+            pages: list[Image.Image] = []
+            for p in paths:
+                pages.extend(ocr_engine.load_pages(p))
         except Exception as exc:  # noqa: BLE001
-            self.after(0, lambda: self._on_process_error(exc))
+            # Capture par défaut d'argument (exc=exc) : "except ... as exc" supprime la variable
+            # à la sortie du bloc, avant que cette lambda ne s'exécute réellement (via after()).
+            self.after(0, lambda exc=exc: self._on_process_error(exc, token))
             return
 
         extraction = None
@@ -336,15 +389,25 @@ class ImportTab(ttk.Frame):
             except Exception:  # noqa: BLE001
                 extraction = None
 
-        self.after(0, lambda: self._apply_extraction(pages, extraction))
+        self.after(0, lambda: self._apply_extraction(pages, extraction, token))
 
-    def _on_process_error(self, exc: Exception):
+    def _on_process_error(self, exc: Exception, token: int):
+        if token != self._extraction_token:
+            return  # une extraction plus récente (page ajoutée entre-temps) a pris le relais
         self._set_processing(False)
         messagebox.showerror("Erreur", f"Impossible de lire ce fichier :\n{exc}")
+        if len(self.current_source_paths) > 1:
+            # Échec de l'ajout d'une page supplémentaire : on revient à l'état précédent (la ou
+            # les pages déjà chargées restent valables) plutôt que de tout perdre.
+            self.current_source_paths.pop()
+            self._update_file_label()
+            return
         self.reset_form()
         self._maybe_start_next_from_queue()
 
-    def _apply_extraction(self, pages: list[Image.Image], extraction):
+    def _apply_extraction(self, pages: list[Image.Image], extraction, token: int):
+        if token != self._extraction_token:
+            return  # une extraction plus récente (page ajoutée entre-temps) a pris le relais
         self._set_processing(False)
         self.current_pages = pages
         self._show_thumbnail(pages[0])
@@ -397,8 +460,10 @@ class ImportTab(ttk.Frame):
         self.thumb_label.pack(pady=6, before=self.open_file_btn)
 
     def _open_source_file(self):
-        if self.current_path and self.current_path.exists():
-            self._open_with_default_app(self.current_path)
+        if self.current_source_paths:
+            for p in self.current_source_paths:
+                if p.exists():
+                    self._open_with_default_app(p)
         elif self.editing_id is not None:
             wo = db.get_work_order(self.editing_id)
             if wo and wo.source_filename:
@@ -470,7 +535,7 @@ class ImportTab(ttk.Frame):
     def load_for_edit(self, work_order: WorkOrder):
         self.reset_form()
         self.editing_id = work_order.id
-        self.current_path = None
+        self.current_source_paths = []
         self.file_label.config(text=f"(fichier existant : {work_order.source_filename or 'aucun'})")
         self.back_btn.pack(side="left", padx=(20, 6), before=self.reset_btn)
 
@@ -502,7 +567,7 @@ class ImportTab(ttk.Frame):
 
     def reset_form(self, keep_file_dialog_open: bool = False):
         self.editing_id = None
-        self.current_path = None
+        self.current_source_paths = []
         self.current_pages = None
         self._thumbnail_imgtk = None
         self.thumb_label.config(image="")
@@ -558,8 +623,8 @@ class ImportTab(ttk.Frame):
         for field_name, _label in SUMMARY_FIELDS:
             setattr(wo, field_name, self.summary_entries[field_name].get_decimal())
 
-        if self.current_path is not None:
-            stored_name, stored_type = storage.store_source_file(self.current_path, date_iso)
+        if self.current_source_paths:
+            stored_name, stored_type = storage.store_source_files(self.current_source_paths, date_iso)
             wo.source_filename = stored_name
             wo.source_type = stored_type
         elif target_id is not None:

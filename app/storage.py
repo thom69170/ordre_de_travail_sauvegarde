@@ -31,6 +31,37 @@ def store_source_file(original_path: Path, date_iso: str) -> tuple[str, str]:
     return dest_path.name, source_type
 
 
+def store_source_files(paths: list[Path], date_iso: str) -> tuple[str, str]:
+    """Comme store_source_file, mais pour un ordre de travail dont les pages ont été capturées
+    en plusieurs fichiers séparés (ex: 2 photos du téléphone pour un OT sur 2 pages) : les
+    combine en un seul PDF multi-page, pour que l'OT garde un seul fichier source cohérent
+    (comme n'importe quel autre) plutôt que de rajouter une colonne/liste en base."""
+    if len(paths) == 1:
+        return store_source_file(paths[0], date_iso)
+
+    from app.ocr_engine import load_pages
+
+    images = []
+    for p in paths:
+        images.extend(load_pages(p))
+    if not images:
+        raise ValueError("Aucune page à enregistrer.")
+
+    safe_date = date_iso if date_iso else "sans-date"
+    dest_dir = imports_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    dest_path = dest_dir / f"{safe_date}.pdf"
+    counter = 1
+    while dest_path.exists():
+        dest_path = dest_dir / f"{safe_date}_{counter}.pdf"
+        counter += 1
+
+    first, rest = images[0], images[1:]
+    first.save(dest_path, "PDF", save_all=True, append_images=rest)
+    return dest_path.name, "pdf"
+
+
 def resolve_source_path(stored_filename: str) -> Path:
     return imports_dir() / stored_filename
 

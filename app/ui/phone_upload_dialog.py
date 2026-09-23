@@ -16,7 +16,7 @@ class PhoneUploadDialog(tk.Toplevel):
     def __init__(
         self,
         parent: tk.Misc,
-        on_file_received: Callable[[Path], None],
+        on_file_received: Callable[[Path, bool], None],
         *,
         dialog_title: str = "Recevoir depuis le téléphone",
         waiting_text: str = "En attente d'une photo...",
@@ -96,17 +96,17 @@ class PhoneUploadDialog(tk.Toplevel):
                 wraplength=320, justify="left",
             )
 
-    def _handle_received(self, path: Path):
+    def _handle_received(self, path: Path, is_append: bool):
         # Appelé depuis le thread du serveur HTTP : on repasse sur le thread Tk avant de toucher l'UI.
-        self.after(0, lambda: self._on_received_ui(path))
+        self.after(0, lambda: self._on_received_ui(path, is_append))
 
-    def _on_received_ui(self, path: Path):
+    def _on_received_ui(self, path: Path, is_append: bool):
         self._received_count += 1
         self.status_label.config(
             text=f"{self._received_count} fichier(s) reçu(s) au total (dernier : {path.name}) — "
                  "tu peux continuer à en envoyer d'autres."
         )
-        self._on_file_received(path)
+        self._on_file_received(path, is_append)
 
     def close(self):
         self._server.stop()

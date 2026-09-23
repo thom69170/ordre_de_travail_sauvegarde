@@ -38,6 +38,12 @@ statistiques par semaine / mois / année.
    **Vérifie toujours les valeurs pré-remplies en les comparant à l'aperçu de la photo affiché
    à gauche** avant d'enregistrer : l'OCR (lecture automatique) n'est pas fiable à 100 %,
    surtout sur des photos prises au téléphone (flou, reflet, pli du papier...).
+   - **OT sur plusieurs pages** : si un ordre de travail tient sur 2 photos (ou plus), sélectionne-
+     les toutes ensemble (plusieurs fichiers à la fois dans **Choisir une photo ou un PDF...**, ou
+     plusieurs fichiers sélectionnés ensemble sur le téléphone) : elles sont lues comme un seul
+     document (récapitulatif + tous les trajets, où qu'ils soient répartis) plutôt que comme des
+     OT séparés et incomplets. Un document déjà chargé peut aussi recevoir une page de plus via
+     **Choisir une photo ou un PDF...** (l'app demande si c'est un ajout ou un nouvel OT).
    - **Envoyer une photo depuis le téléphone** : bouton **Recevoir depuis le téléphone...**.
      Une fenêtre affiche un QR code ; scanne-le avec l'appareil photo du téléphone (connecté au
      **même Wi-Fi** que ce PC) pour ouvrir une page qui permet de prendre la photo ou de choisir

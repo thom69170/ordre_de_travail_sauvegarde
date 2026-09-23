@@ -48,7 +48,9 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
   <h1>__TITLE__</h1>
   <p>__INSTRUCTION__</p>
   <label for="f">__CHOOSE_LABEL__</label>
-  <input type="file" id="f" accept="__ACCEPT__"__CAPTURE_ATTR__>
+  <input type="file" id="f" accept="__ACCEPT__"__CAPTURE_ATTR__ __MULTIPLE_ATTR__>
+  <p id="multi-hint" style="display:none">Plusieurs fichiers sélectionnés ensemble = les pages
+  d'un même ordre de travail (envoyées dans l'ordre de sélection).</p>
   <img id="preview">
   <button id="send" disabled>Envoyer au PC</button>
   <div id="status"></div>
@@ -57,52 +59,69 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
   const sendBtn = document.getElementById('send');
   const status = document.getElementById('status');
   const preview = document.getElementById('preview');
-  let file = null;
+  const multiHint = document.getElementById('multi-hint');
+  let files = [];
 
   input.addEventListener('change', () => {
-    file = input.files[0] || null;
-    sendBtn.disabled = !file;
+    files = Array.from(input.files || []);
+    sendBtn.disabled = files.length === 0;
     status.textContent = '';
-    if (file && file.type.startsWith('image/')) {
-      preview.src = URL.createObjectURL(file);
+    multiHint.style.display = files.length > 1 ? 'block' : 'none';
+    if (files.length && files[0].type.startsWith('image/')) {
+      preview.src = URL.createObjectURL(files[0]);
       preview.style.display = 'inline-block';
     } else {
       preview.style.display = 'none';
     }
   });
 
-  sendBtn.addEventListener('click', () => {
-    if (!file) return;
-    sendBtn.disabled = true;
-    status.textContent = 'Envoi en cours...';
-    fetch(window.location.pathname, {
+  async function sendOne(file, isAppend) {
+    return fetch(window.location.pathname, {
       method: 'POST',
       headers: {
         'Content-Type': file.type || 'application/octet-stream',
         'X-Filename': encodeURIComponent(file.name || 'photo.jpg'),
+        'X-Append': isAppend ? '1' : '0',
       },
       body: file,
-    }).then(r => {
-      if (r.ok) {
-        status.textContent = 'Envoyé ! Tu peux fermer cette page ou envoyer un autre fichier.';
-        input.value = '';
-        file = null;
-        preview.style.display = 'none';
-      } else {
-        status.textContent = "Échec de l'envoi (" + r.status + "). Réessaie.";
-        sendBtn.disabled = false;
-      }
-    }).catch(() => {
-      status.textContent = "Échec de l'envoi (connexion). Réessaie.";
-      sendBtn.disabled = false;
     });
+  }
+
+  sendBtn.addEventListener('click', async () => {
+    if (!files.length) return;
+    sendBtn.disabled = true;
+    for (let i = 0; i < files.length; i++) {
+      status.textContent = files.length > 1
+        ? `Envoi de la page ${i + 1}/${files.length}...`
+        : 'Envoi en cours...';
+      let response;
+      try {
+        response = await sendOne(files[i], i > 0);
+      } catch (e) {
+        status.textContent = "Échec de l'envoi (connexion). Réessaie.";
+        sendBtn.disabled = false;
+        return;
+      }
+      if (!response.ok) {
+        status.textContent = "Échec de l'envoi (" + response.status + "). Réessaie.";
+        sendBtn.disabled = false;
+        return;
+      }
+    }
+    status.textContent = 'Envoyé ! Tu peux fermer cette page ou envoyer un autre fichier.';
+    input.value = '';
+    files = [];
+    multiHint.style.display = 'none';
+    preview.style.display = 'none';
   });
 </script>
 </body>
 </html>"""
 
 
-def _build_upload_page(title: str, instruction: str, choose_label: str, accept: str, capture: bool) -> bytes:
+def _build_upload_page(
+    title: str, instruction: str, choose_label: str, accept: str, capture: bool, multiple: bool
+) -> bytes:
     # Remplacement de texte simple plutôt que str.format() : le CSS/JS du template contient
     # beaucoup d'accolades littérales qu'il faudrait sinon toutes doubler (source d'un bug déjà
     # rencontré ici - voir l'historique du fichier).
@@ -112,6 +131,7 @@ def _build_upload_page(title: str, instruction: str, choose_label: str, accept: 
     html = html.replace("__CHOOSE_LABEL__", choose_label)
     html = html.replace("__ACCEPT__", accept)
     html = html.replace("__CAPTURE_ATTR__", ' capture="environment"' if capture else "")
+    html = html.replace("__MULTIPLE_ATTR__", "multiple" if multiple else "")
     return html.encode("utf-8")
 
 
@@ -132,13 +152,14 @@ class PhoneUploadServer:
 
     def __init__(
         self,
-        on_file_received: Callable[[Path], None],
+        on_file_received: Callable[[Path, bool], None],
         *,
         page_title: str = "Ordres de travail",
         instruction: str = "Prends une photo de l'ordre de travail ou choisis un fichier, puis envoie-le au PC.",
         choose_label: str = "Choisir / prendre une photo",
         accept: str = "image/*,.pdf",
         capture: bool = True,
+        multiple: bool = False,
         allowed_suffixes: frozenset[str] = ALLOWED_SUFFIXES,
         default_suffix: str = ".jpg",
     ):
@@ -146,7 +167,9 @@ class PhoneUploadServer:
         self._token = secrets.token_urlsafe(16)
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
-        self._page_body = _build_upload_page(page_title, instruction, choose_label, accept, capture)
+        self._page_body = _build_upload_page(
+            page_title, instruction, choose_label, accept, capture, multiple
+        )
         self._allowed_suffixes = allowed_suffixes
         self._default_suffix = default_suffix
 
@@ -191,6 +214,7 @@ class PhoneUploadServer:
                     return
 
                 data = self.rfile.read(length)
+                is_append = self.headers.get("X-Append", "0") == "1"
 
                 raw_name = self.headers.get("X-Filename", "photo.jpg")
                 try:
@@ -210,7 +234,7 @@ class PhoneUploadServer:
                 self.end_headers()
 
                 try:
-                    on_file_received(dest_path)
+                    on_file_received(dest_path, is_append)
                 except Exception:  # noqa: BLE001
                     pass
 

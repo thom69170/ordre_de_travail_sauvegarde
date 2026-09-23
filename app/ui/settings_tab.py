@@ -256,7 +256,10 @@ class SettingsTab(ttk.Frame):
         try:
             updater.download_and_stage_update()
         except updater.UpdateError as exc:
-            self.after(0, lambda: self._on_install_error(str(exc)))
+            # Capture immédiate en chaîne : "except ... as exc" supprime la variable à la sortie
+            # du bloc, avant que cette lambda ne s'exécute réellement (via after()).
+            message = str(exc)
+            self.after(0, lambda: self._on_install_error(message))
             return
         self.after(0, self._on_install_success)
 
