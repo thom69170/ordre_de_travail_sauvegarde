@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Feuilles de paie{% endblock %}
+{% block title %}Feuilles de prépaie{% endblock %}
 {% block content %}
 <div class="card">
   <h1>Feuilles de prépaie</h1>
-  <a class="btn" href="/payslips/new">Importer une feuille de paie</a>
+  <a class="btn" href="/payslips/new">Importer une feuille de prépaie</a>
   {% if not payslips %}
-  <p class="muted" style="margin-top:16px;">Aucune feuille de paie enregistrée.</p>
+  <p class="muted" style="margin-top:16px;">Aucune feuille de prépaie enregistrée.</p>
   {% else %}
   <table style="margin-top:16px;">
     <thead><tr><th>Période</th><th>HS 25%</th><th>HS 50%</th><th>Repos différé</th><th></th></tr></thead>

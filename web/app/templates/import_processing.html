@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Analyse en cours{% endblock %}
+{% block content %}
+<div class="card" style="text-align:center;padding:40px 20px;">
+  <h1>Analyse de l'ordre de travail en cours…</h1>
+  <p class="muted">Ça prend généralement 30 secondes à 2 minutes selon le nombre de pages.</p>
+
+  <div class="road">
+    <div class="bus">🚌</div>
+  </div>
+
+  <p class="muted" style="margin-top:24px;">
+    Tu peux quitter cette page ou fermer l'onglet : l'analyse continue en arrière-plan.
+    Retrouve-la depuis <a href="/import">Importer</a> → « Imports en cours / à vérifier ».
+  </p>
+  <a class="btn secondary" href="/import">Retour à Importer</a>
+</div>
+
+<style>
+.road {
+  position: relative;
+  height: 60px;
+  margin: 30px 0;
+  background: repeating-linear-gradient(90deg, var(--border) 0 24px, transparent 24px 48px);
+  background-position: 0 50%;
+  background-size: 48px 4px;
+  background-repeat: repeat-x;
+  border-radius: 4px;
+}
+.bus {
+  position: absolute;
+  top: 4px;
+  font-size: 32px;
+  animation: drive 2.4s linear infinite;
+}
+@keyframes drive {
+  0% { left: -10%; }
+  100% { left: 100%; }
+}
+</style>
+
+<script>
+(function poll() {
+  fetch(window.location.pathname + "/check")
+    .then(r => r.json())
+    .then(data => {
+      if (data.status !== "pending") {
+        window.location.reload();
+      } else {
+        setTimeout(poll, 3000);
+      }
+    })
+    .catch(() => setTimeout(poll, 5000));
+})();
+</script>
+{% endblock %}

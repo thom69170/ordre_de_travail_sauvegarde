@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Erreur d'analyse{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>L'analyse a échoué</h1>
+  <p class="error">{{ error }}</p>
+  <div class="actions-row">
+    <a class="btn" href="/import">Réessayer</a>
+    <form method="post" action="/import/status/{{ token }}/discard">
+      <button class="btn secondary" type="submit">Abandonner cet import</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
