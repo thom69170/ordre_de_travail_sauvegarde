@@ -6,6 +6,7 @@
   {% if not work_orders %}
   <p class="muted">Aucun OT enregistré pour l'instant. <a href="/import">Importer le premier</a>.</p>
   {% else %}
+  <div class="table-scroll">
   <table>
     <thead>
       <tr><th>Date</th><th>TTE</th><th>TPS</th><th>Amplitude</th><th>Trajets</th><th></th></tr>
@@ -18,17 +19,17 @@
         <td>{{ "%.2f"|format(wo.tps) }}</td>
         <td>{{ "%.2f"|format(wo.ampli) }}</td>
         <td>{{ wo.trajets|length }}</td>
-        <td>
+        <td class="row-actions">
           <a href="/history/{{ wo.id }}/edit">Modifier</a>
-          &nbsp;
-          <form method="post" action="/history/{{ wo.id }}/delete" style="display:inline;" onsubmit="return confirm('Supprimer cet OT ?');">
-            <button type="submit" style="color:#dc2626;padding:0;">Supprimer</button>
+          <form method="post" action="/history/{{ wo.id }}/delete" onsubmit="return confirm('Supprimer cet OT ?');">
+            <button type="submit" class="link-danger">Supprimer</button>
           </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

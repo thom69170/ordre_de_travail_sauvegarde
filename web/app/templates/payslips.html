@@ -7,6 +7,7 @@
   {% if not payslips %}
   <p class="muted" style="margin-top:16px;">Aucune feuille de prépaie enregistrée.</p>
   {% else %}
+  <div class="table-scroll">
   <table style="margin-top:16px;">
     <thead><tr><th>Période</th><th>HS 25%</th><th>HS 50%</th><th>Repos différé</th><th></th></tr></thead>
     <tbody>
@@ -17,14 +18,15 @@
         <td>{{ "%.2f"|format(p.hs_50) }}</td>
         <td>{{ "%.2f"|format(p.repos_differe) }}</td>
         <td>
-          <form method="post" action="/payslips/{{ p.id }}/delete" style="display:inline;" onsubmit="return confirm('Supprimer ?');">
-            <button type="submit" style="color:#dc2626;padding:0;">Supprimer</button>
+          <form method="post" action="/payslips/{{ p.id }}/delete" onsubmit="return confirm('Supprimer ?');">
+            <button type="submit" class="link-danger">Supprimer</button>
           </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

@@ -14,6 +14,7 @@
 
 <div class="card">
   <h2>Par semaine</h2>
+  <div class="table-scroll">
   <table>
     <thead><tr><th>Semaine</th><th>Jours</th><th>TTE</th><th>TPS</th><th>Amplitude</th></tr></thead>
     <tbody>
@@ -22,10 +23,12 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="card">
   <h2>Par mois</h2>
+  <div class="table-scroll">
   <table>
     <thead><tr><th>Mois</th><th>Jours</th><th>TTE</th><th>TPS</th><th>Amplitude</th></tr></thead>
     <tbody>
@@ -34,10 +37,12 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="card">
   <h2>Par année</h2>
+  <div class="table-scroll">
   <table>
     <thead><tr><th>Année</th><th>Jours</th><th>TTE</th><th>TPS</th><th>Amplitude</th></tr></thead>
     <tbody>
@@ -46,12 +51,13 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="card">
   <h2>Lignes les plus fréquentes</h2>
   {% if not top_trajets %}<p class="muted">Aucun trajet enregistré.</p>{% endif %}
-  <table>
+  <table class="kv">
     <tbody>
       {% for t in top_trajets %}
       <tr><td>{{ t.label }}</td><td>{{ t.count }}</td></tr>

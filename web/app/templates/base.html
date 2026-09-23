@@ -4,21 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Ordre de travail{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   {% if user %}
   <nav>
-    <span class="brand">Ordre de travail</span>
-    <a href="/import">Importer</a>
-    <a href="/history">Historique</a>
-    <a href="/stats">Statistiques</a>
-    <a href="/payslips">Feuilles de prépaie</a>
-    <span class="spacer"></span>
-    <span class="muted">{{ user.email }}</span>
-    <form method="post" action="/logout" style="margin:0;">
-      <button type="submit">Déconnexion</button>
-    </form>
+    <div class="nav-top">
+      <span class="brand">Ordre de travail</span>
+      <button class="nav-toggle" type="button" aria-label="Menu" onclick="document.querySelector('.nav-links').classList.toggle('open')">☰</button>
+    </div>
+    <div class="nav-links">
+      <a href="/import">Importer</a>
+      <a href="/history">Historique</a>
+      <a href="/stats">Statistiques</a>
+      <a href="/payslips">Feuilles de prépaie</a>
+      <span class="spacer"></span>
+      <span class="muted nav-email">{{ user.email }}</span>
+      <form method="post" action="/logout" style="margin:0;">
+        <button type="submit">Déconnexion</button>
+      </form>
+    </div>
   </nav>
   {% endif %}
   <main>
