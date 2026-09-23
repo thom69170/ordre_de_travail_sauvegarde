@@ -2,7 +2,15 @@
 {% block title %}Historique{% endblock %}
 {% block content %}
 <div class="card">
-  <h1>Historique des ordres de travail</h1>
+  <div class="card-header">
+    <h1>Historique des ordres de travail</h1>
+    {% if work_orders %}
+    <div class="sort-toggle">
+      <a href="/history?sort=desc" class="{% if sort == 'desc' %}active{% endif %}">Plus récent d'abord</a>
+      <a href="/history?sort=asc" class="{% if sort == 'asc' %}active{% endif %}">Plus ancien d'abord</a>
+    </div>
+    {% endif %}
+  </div>
   {% if not work_orders %}
   <p class="muted">Aucun OT enregistré pour l'instant. <a href="/import">Importer le premier</a>.</p>
   {% else %}
@@ -14,7 +22,7 @@
     <tbody>
       {% for wo in work_orders %}
       <tr class="{% if wo.last_minute_change %}last-minute{% endif %}">
-        <td>{{ wo.date }}</td>
+        <td>{{ wo.date|fr_date }}</td>
         <td>{{ "%.2f"|format(wo.tte) }}</td>
         <td>{{ "%.2f"|format(wo.tps) }}</td>
         <td>{{ "%.2f"|format(wo.ampli) }}</td>

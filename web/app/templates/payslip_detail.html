@@ -2,7 +2,7 @@
 {% block title %}Feuille de prépaie{% endblock %}
 {% block content %}
 <div class="card">
-  <h1>Feuille de prépaie du {{ p.period_start }} au {{ p.period_end }}</h1>
+  <h1>Feuille de prépaie du {{ p.period_start|fr_date }} au {{ p.period_end|fr_date }}</h1>
   <div class="stat-tiles">
     <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.hs_25) }}</div><div class="label">HS 25%</div></div>
     <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.hs_50) }}</div><div class="label">HS 50%</div></div>

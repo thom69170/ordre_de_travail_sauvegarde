@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+from datetime import date
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request, UploadFile
@@ -22,6 +23,19 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 TMP_DIR = DATA_DIR / "tmp"
+
+
+def fr_date(value: str) -> str:
+    """Affiche une date ISO (YYYY-MM-DD, format de stockage) en JJ/MM/AAAA."""
+    if not value:
+        return value
+    try:
+        return date.fromisoformat(value).strftime("%d/%m/%Y")
+    except ValueError:
+        return value
+
+
+templates.env.filters["fr_date"] = fr_date
 
 
 @app.on_event("startup")
@@ -271,9 +285,11 @@ def history_page(request: Request):
     user = _current_user(request)
     if not user:
         return _redirect("/login")
-    work_orders = db.list_work_orders(user["id"])
+    order = "asc" if request.query_params.get("sort") == "asc" else "desc"
+    work_orders = db.list_work_orders(user["id"], order=order)
     return templates.TemplateResponse(
-        "history.html", {"request": request, "user": user, "work_orders": work_orders}
+        "history.html",
+        {"request": request, "user": user, "work_orders": work_orders, "sort": order},
     )
 
 

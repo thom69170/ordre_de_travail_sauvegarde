@@ -13,7 +13,7 @@
     <tbody>
       {% for p in payslips %}
       <tr>
-        <td><a href="/payslips/{{ p.id }}">{{ p.period_start }} → {{ p.period_end }}</a></td>
+        <td><a href="/payslips/{{ p.id }}">{{ p.period_start|fr_date }} → {{ p.period_end|fr_date }}</a></td>
         <td>{{ "%.2f"|format(p.hs_25) }}</td>
         <td>{{ "%.2f"|format(p.hs_50) }}</td>
         <td>{{ "%.2f"|format(p.repos_differe) }}</td>

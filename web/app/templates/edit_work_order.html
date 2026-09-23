@@ -2,7 +2,7 @@
 {% block title %}Modifier l'OT{% endblock %}
 {% block content %}
 <div class="card">
-  <h1>Modifier l'ordre de travail du {{ wo.date }}</h1>
+  <h1>Modifier l'ordre de travail du {{ wo.date|fr_date }}</h1>
   <form method="post" action="/history/{{ wo.id }}/edit">
     <div class="grid">
       <div>

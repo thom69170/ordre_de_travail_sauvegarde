@@ -224,7 +224,7 @@ def list_known_lignes(user_id: int) -> list[str]:
 
 
 def list_work_orders(
-    user_id: int, start_date: str | None = None, end_date: str | None = None
+    user_id: int, start_date: str | None = None, end_date: str | None = None, order: str = "desc"
 ) -> list[WorkOrder]:
     query = "SELECT id FROM work_orders WHERE user_id = %s"
     params: list = [user_id]
@@ -234,7 +234,7 @@ def list_work_orders(
     if end_date:
         query += " AND date <= %s"
         params.append(end_date)
-    query += " ORDER BY date DESC"
+    query += " ORDER BY date " + ("ASC" if order == "asc" else "DESC")
     with connect() as conn:
         ids = [r["id"] for r in conn.execute(query, params).fetchall()]
     return [wo for wo in (get_work_order(user_id, i) for i in ids) if wo is not None]
