@@ -47,7 +47,10 @@ class PhoneUploadDialog(tk.Toplevel):
             return
 
         self._show_url(url)
-        self.grab_set()
+        # Pas de grab_set() : contrairement à une boîte de dialogue classique, celle-ci reste
+        # ouverte longtemps (le temps d'envoyer plusieurs documents depuis le téléphone) et ne
+        # doit donc pas bloquer la fenêtre principale - il faut pouvoir enregistrer l'OT en cours
+        # de revue sans avoir à fermer cette fenêtre.
 
     def _build_ui(self):
         frame = ttk.Frame(self, padding=16)
@@ -110,8 +113,4 @@ class PhoneUploadDialog(tk.Toplevel):
 
     def close(self):
         self._server.stop()
-        try:
-            self.grab_release()
-        except tk.TclError:
-            pass
         self.destroy()
