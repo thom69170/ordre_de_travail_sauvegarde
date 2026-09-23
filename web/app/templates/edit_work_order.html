@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Modifier l'OT{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Modifier l'ordre de travail du {{ wo.date }}</h1>
+  <form method="post" action="/history/{{ wo.id }}/edit">
+    <div class="grid">
+      <div>
+        <label>Date</label>
+        <input type="date" name="date" value="{{ wo.date }}" required>
+      </div>
+      <div>
+        <label>Conducteur</label>
+        <input type="text" name="driver_name" value="{{ wo.driver_name }}">
+      </div>
+      <div>
+        <label>Matricule</label>
+        <input type="text" name="matricule" value="{{ wo.matricule }}">
+      </div>
+    </div>
+
+    <h2 style="margin-top:20px;">Tableau récapitulatif</h2>
+    {% set values = wo.__dict__ %}
+    {% include "_summary_fields.html" %}
+
+    <div class="checkbox-row">
+      <input type="checkbox" name="last_minute_change" id="lmc" {% if wo.last_minute_change %}checked{% endif %}>
+      <label for="lmc" style="margin:0;">Changement de dernière minute (prime)</label>
+    </div>
+
+    <label>Trajets (un par ligne)</label>
+    <textarea name="trajets">{{ trajets_text }}</textarea>
+
+    <label>Notes</label>
+    <textarea name="notes" style="min-height:50px;">{{ wo.notes }}</textarea>
+
+    <div class="actions-row">
+      <button class="btn" type="submit">Enregistrer</button>
+      <a class="btn secondary" href="/history">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

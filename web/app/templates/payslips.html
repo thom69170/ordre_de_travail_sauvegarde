@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Feuilles de paie{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Feuilles de prépaie</h1>
+  <a class="btn" href="/payslips/new">Importer une feuille de paie</a>
+  {% if not payslips %}
+  <p class="muted" style="margin-top:16px;">Aucune feuille de paie enregistrée.</p>
+  {% else %}
+  <table style="margin-top:16px;">
+    <thead><tr><th>Période</th><th>HS 25%</th><th>HS 50%</th><th>Repos différé</th><th></th></tr></thead>
+    <tbody>
+      {% for p in payslips %}
+      <tr>
+        <td><a href="/payslips/{{ p.id }}">{{ p.period_start }} → {{ p.period_end }}</a></td>
+        <td>{{ "%.2f"|format(p.hs_25) }}</td>
+        <td>{{ "%.2f"|format(p.hs_50) }}</td>
+        <td>{{ "%.2f"|format(p.repos_differe) }}</td>
+        <td>
+          <form method="post" action="/payslips/{{ p.id }}/delete" style="display:inline;" onsubmit="return confirm('Supprimer ?');">
+            <button type="submit" style="color:#dc2626;padding:0;">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

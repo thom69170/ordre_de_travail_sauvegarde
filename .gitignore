@@ -22,3 +22,6 @@ codesign/
 
 # Documents générés (pas du code source)
 *.pdf
+
+# Secrets de déploiement de l'app web
+web/.env

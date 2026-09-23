@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Statistiques{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Statistiques</h1>
+  <div class="stat-tiles">
+    <div class="stat-tile"><div class="value">{{ summary.days }}</div><div class="label">Jours</div></div>
+    <div class="stat-tile"><div class="value">{{ hours_to_hm(summary.tte) }}</div><div class="label">TTE total</div></div>
+    <div class="stat-tile"><div class="value">{{ hours_to_hm(summary.tps) }}</div><div class="label">TPS total</div></div>
+    <div class="stat-tile"><div class="value">{{ hours_to_hm(summary.ampli) }}</div><div class="label">Amplitude</div></div>
+    <div class="stat-tile"><div class="value">{{ summary.last_minute_count }}</div><div class="label">Primes dernière minute</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Par semaine</h2>
+  <table>
+    <thead><tr><th>Semaine</th><th>Jours</th><th>TTE</th><th>TPS</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      {% for pt in weekly|reverse %}
+      <tr><td>{{ pt.label }}</td><td>{{ pt.days }}</td><td>{{ hours_to_hm(pt.tte) }}</td><td>{{ hours_to_hm(pt.tps) }}</td><td>{{ hours_to_hm(pt.ampli) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Par mois</h2>
+  <table>
+    <thead><tr><th>Mois</th><th>Jours</th><th>TTE</th><th>TPS</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      {% for pt in monthly|reverse %}
+      <tr><td>{{ pt.label }}</td><td>{{ pt.days }}</td><td>{{ hours_to_hm(pt.tte) }}</td><td>{{ hours_to_hm(pt.tps) }}</td><td>{{ hours_to_hm(pt.ampli) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Par année</h2>
+  <table>
+    <thead><tr><th>Année</th><th>Jours</th><th>TTE</th><th>TPS</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      {% for pt in yearly|reverse %}
+      <tr><td>{{ pt.label }}</td><td>{{ pt.days }}</td><td>{{ hours_to_hm(pt.tte) }}</td><td>{{ hours_to_hm(pt.tps) }}</td><td>{{ hours_to_hm(pt.ampli) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Lignes les plus fréquentes</h2>
+  {% if not top_trajets %}<p class="muted">Aucun trajet enregistré.</p>{% endif %}
+  <table>
+    <tbody>
+      {% for t in top_trajets %}
+      <tr><td>{{ t.label }}</td><td>{{ t.count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

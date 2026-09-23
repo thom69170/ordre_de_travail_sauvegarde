@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Importer une feuille de paie{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Importer une feuille de prépaie</h1>
+  <p class="muted">PDF de la feuille de prépaie RNA (rapport d'activité).</p>
+  <form method="post" action="/payslips/new" enctype="multipart/form-data">
+    <label>Fichier PDF</label>
+    <input type="file" name="file" required accept=".pdf">
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <button class="btn" type="submit">Analyser</button>
+  </form>
+</div>
+{% endblock %}

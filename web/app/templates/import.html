@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Importer un OT{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Importer un ordre de travail</h1>
+  <p class="muted">Photo(s) ou PDF. Sélectionne plusieurs fichiers si l'OT tient sur plusieurs pages séparées.</p>
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <label>Fichier(s)</label>
+    <input type="file" name="files" multiple required accept=".pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp">
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <button class="btn" type="submit">Analyser</button>
+  </form>
+</div>
+{% endblock %}

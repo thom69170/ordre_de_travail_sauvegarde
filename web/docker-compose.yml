@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ot}
+      POSTGRES_DB: ot
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://ot:${POSTGRES_PASSWORD:-ot}@db:5432/ot
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      DATA_DIR: /data
+    volumes:
+      - app_data:/data
+    depends_on:
+      - db
+    networks:
+      - internal
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.ot.rule=Host(`ot.notivo.fr`)"
+      - "traefik.http.routers.ot.entrypoints=websecure"
+      - "traefik.http.routers.ot.tls=true"
+      - "traefik.http.routers.ot.tls.certresolver=le"
+      - "traefik.http.services.ot.loadbalancer.server.port=8000"
+
+networks:
+  internal:
+  traefik:
+    external: true
+
+volumes:
+  db_data:
+  app_data:

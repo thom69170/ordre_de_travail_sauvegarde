@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Feuille de paie{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Feuille de prépaie du {{ p.period_start }} au {{ p.period_end }}</h1>
+  <div class="stat-tiles">
+    <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.hs_25) }}</div><div class="label">HS 25%</div></div>
+    <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.hs_50) }}</div><div class="label">HS 50%</div></div>
+    <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.cumul_hs_25) }}</div><div class="label">Cumul HS 25%</div></div>
+    <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.cumul_hs_50) }}</div><div class="label">Cumul HS 50%</div></div>
+    <div class="stat-tile"><div class="value">{{ "%.2f"|format(p.repos_differe) }}</div><div class="label">Repos différé</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Récapitulatif mensuel (tous les compteurs)</h2>
+  <table>
+    <tbody>
+      {% for label, value in details.recap.items() %}
+      <tr><td>{{ label }}</td><td>{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Compteurs cumulés</h2>
+  <table>
+    <tbody>
+      {% for label, value in details.compteurs.items() %}
+      <tr><td>{{ label }}</td><td>{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<a class="btn secondary" href="/payslips">Retour</a>
+{% endblock %}

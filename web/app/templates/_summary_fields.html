@@ -1,0 +1,15 @@
+{% set labels = {
+  "tps": "TPS", "tad": "TAD", "autres_temps": "Autres Temps", "tte": "TTE",
+  "hlr50": "HLR 50% HI", "hlr100": "HLR 100% HI", "ampli": "Amplitude",
+  "amp_lt12": "Amp<12 HI25%", "amp_12_13": "Amp 12-13 HI75%", "amp_gt13": "Amp>13 HI100%",
+  "rcn": "RCN 21h-6h", "repas": "Repas P", "primes": "Primes P",
+  "dim_travail": "Dim. Travail P", "ferie": "Férié P", "tps_oc": "TPS OC P"
+} %}
+<div class="grid">
+  {% for name in summary_fields %}
+  <div>
+    <label>{{ labels[name] }}</label>
+    <input type="text" name="{{ name }}" value="{{ values.get(name, 0) }}">
+  </div>
+  {% endfor %}
+</div>

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Inscription{% endblock %}
+{% block content %}
+<div class="card" style="max-width:380px;margin:40px auto;">
+  <h1>Créer un compte</h1>
+  <form method="post" action="/register">
+    <label>Email</label>
+    <input type="email" name="email" required autofocus>
+    <label>Mot de passe (8 caractères min.)</label>
+    <input type="password" name="password" required minlength="8">
+    <label>Confirmation</label>
+    <input type="password" name="password2" required minlength="8">
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <button class="btn" type="submit">Créer le compte</button>
+  </form>
+  <p class="muted" style="margin-top:16px;">Déjà inscrit ? <a href="/login">Se connecter</a></p>
+</div>
+{% endblock %}

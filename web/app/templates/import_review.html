@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Vérifier l'OT{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Vérifie les champs avant d'enregistrer</h1>
+
+  {% if result.warnings %}
+  <div class="warnings">
+    <strong>Points à vérifier :</strong>
+    <ul>{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/import/save">
+    <input type="hidden" name="token" value="{{ token }}">
+
+    <div class="grid">
+      <div>
+        <label>Date</label>
+        <input type="date" name="date" value="{{ result.date }}" required>
+      </div>
+      <div>
+        <label>Conducteur</label>
+        <input type="text" name="driver_name" value="{{ result.driver_name }}">
+      </div>
+      <div>
+        <label>Matricule</label>
+        <input type="text" name="matricule" value="{{ result.matricule }}">
+      </div>
+    </div>
+
+    <h2 style="margin-top:20px;">Tableau récapitulatif</h2>
+    {% set values = result.summary %}
+    {% include "_summary_fields.html" %}
+
+    <div class="checkbox-row">
+      <input type="checkbox" name="last_minute_change" id="lmc" {% if result.last_minute_change %}checked{% endif %}>
+      <label for="lmc" style="margin:0;">Changement de dernière minute (prime)</label>
+    </div>
+
+    <label>Trajets (un par ligne, "N° ligne — Lieu A / Lieu B" ou "Billet collectif")</label>
+    <datalist id="known-lignes">
+      {% for l in known_lignes %}<option value="{{ l }}">{% endfor %}
+    </datalist>
+    <textarea name="trajets">{{ trajets_text }}</textarea>
+
+    <label>Notes</label>
+    <textarea name="notes" style="min-height:50px;"></textarea>
+
+    <div class="actions-row">
+      <button class="btn" type="submit">Enregistrer</button>
+      <a class="btn secondary" href="/import">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

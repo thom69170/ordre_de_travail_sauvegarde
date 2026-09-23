@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Vérifier la feuille de paie{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Vérifie les champs avant d'enregistrer</h1>
+  {% if data.warnings %}
+  <div class="warnings">
+    <strong>Points à vérifier :</strong>
+    <ul>{% for w in data.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/payslips/save">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="recap_json" value='{{ data.recap|tojson }}'>
+    <input type="hidden" name="compteurs_json" value='{{ data.compteurs|tojson }}'>
+
+    <div class="grid">
+      <div>
+        <label>Début de période</label>
+        <input type="date" name="period_start" value="{{ data.period_start }}" required>
+      </div>
+      <div>
+        <label>Fin de période</label>
+        <input type="date" name="period_end" value="{{ data.period_end }}" required>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:12px;">
+      <div><label>HS 25%</label><input type="text" name="hs_25" value="{{ data.hs_25 }}"></div>
+      <div><label>HS 50%</label><input type="text" name="hs_50" value="{{ data.hs_50 }}"></div>
+      <div><label>Cumul HS 25%</label><input type="text" name="cumul_hs_25" value="{{ data.cumul_hs_25 }}"></div>
+      <div><label>Cumul HS 50%</label><input type="text" name="cumul_hs_50" value="{{ data.cumul_hs_50 }}"></div>
+      <div><label>Solde repos différés</label><input type="text" name="repos_differe" value="{{ data.repos_differe }}"></div>
+    </div>
+
+    <div class="actions-row">
+      <button class="btn" type="submit">Enregistrer</button>
+      <a class="btn secondary" href="/payslips/new">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

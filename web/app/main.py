@@ -1,0 +1,403 @@
+"""Application web FastAPI - "Ordre de travail" (port multi-utilisateur de l'app desktop)."""
+from __future__ import annotations
+
+import json
+import shutil
+import uuid
+from pathlib import Path
+
+from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from app import auth, db, extraction, ocr_engine, payslip_parser, stats, storage
+from app.config import DATA_DIR
+from app.models import SUMMARY_FIELD_NAMES, Payslip, WorkOrder, split_trajet
+
+app = FastAPI(title="Ordre de travail")
+
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+TMP_DIR = DATA_DIR / "tmp"
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    db.init_db()
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _redirect(url: str, status_code: int = 303) -> RedirectResponse:
+    return RedirectResponse(url, status_code=status_code)
+
+
+def _current_user(request: Request) -> dict | None:
+    return auth.get_current_user(request)
+
+
+# --- Authentification ---------------------------------------------------
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if _current_user(request):
+        return _redirect("/history")
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login")
+def login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
+    user = db.get_user_by_email(email)
+    if not user or not auth.verify_password(password, user["password_hash"]):
+        return templates.TemplateResponse(
+            "login.html", {"request": request, "error": "Email ou mot de passe incorrect."}
+        )
+    resp = _redirect("/history")
+    token = auth.make_session_token(user["id"])
+    resp.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    if _current_user(request):
+        return _redirect("/history")
+    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+
+
+@app.post("/register")
+def register_submit(
+    request: Request, email: str = Form(...), password: str = Form(...), password2: str = Form(...)
+):
+    email = email.strip().lower()
+    if not email or "@" not in email:
+        return templates.TemplateResponse(
+            "register.html", {"request": request, "error": "Email invalide."}
+        )
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Le mot de passe doit faire au moins 8 caractères."},
+        )
+    if password != password2:
+        return templates.TemplateResponse(
+            "register.html", {"request": request, "error": "Les mots de passe ne correspondent pas."}
+        )
+    if db.get_user_by_email(email):
+        return templates.TemplateResponse(
+            "register.html", {"request": request, "error": "Un compte existe déjà avec cet email."}
+        )
+    user_id = db.create_user(email, auth.hash_password(password))
+    resp = _redirect("/history")
+    token = auth.make_session_token(user_id)
+    resp.set_cookie(auth.SESSION_COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax")
+    return resp
+
+
+@app.post("/logout")
+def logout():
+    resp = _redirect("/login")
+    resp.delete_cookie(auth.SESSION_COOKIE)
+    return resp
+
+
+@app.get("/")
+def index(request: Request):
+    return _redirect("/history" if _current_user(request) else "/login")
+
+
+# --- Import ---------------------------------------------------------------
+
+@app.get("/import", response_class=HTMLResponse)
+def import_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    return templates.TemplateResponse("import.html", {"request": request, "user": user})
+
+
+@app.post("/import", response_class=HTMLResponse)
+async def import_upload(request: Request, files: list[UploadFile]):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    if not files or not files[0].filename:
+        return templates.TemplateResponse(
+            "import.html", {"request": request, "user": user, "error": "Choisis au moins un fichier."}
+        )
+
+    token = uuid.uuid4().hex
+    tmp_dir = TMP_DIR / token
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths: list[Path] = []
+    for f in files:
+        dest = tmp_dir / f.filename
+        with dest.open("wb") as out:
+            shutil.copyfileobj(f.file, out)
+        saved_paths.append(dest)
+
+    pages = []
+    for p in saved_paths:
+        pages.extend(ocr_engine.load_pages(p))
+    result = extraction.extract_from_pages(pages)
+
+    known_lignes = db.list_known_lignes(user["id"])
+
+    return templates.TemplateResponse(
+        "import_review.html",
+        {
+            "request": request,
+            "user": user,
+            "token": token,
+            "result": result,
+            "summary_fields": SUMMARY_FIELD_NAMES,
+            "trajets_text": "\n".join(result.trajets),
+            "known_lignes": known_lignes,
+        },
+    )
+
+
+@app.post("/import/save")
+async def import_save(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    form = await request.form()
+    token = form.get("token", "")
+    tmp_dir = TMP_DIR / token
+    if not tmp_dir.exists():
+        return _redirect("/import")
+
+    wo = WorkOrder()
+    wo.date = form.get("date", "").strip()
+    wo.driver_name = form.get("driver_name", "").strip().upper()
+    wo.matricule = form.get("matricule", "").strip()
+    wo.notes = form.get("notes", "").strip()
+    wo.last_minute_change = form.get("last_minute_change") == "on"
+    for name in SUMMARY_FIELD_NAMES:
+        try:
+            setattr(wo, name, float((form.get(name, "0") or "0").replace(",", ".")))
+        except ValueError:
+            setattr(wo, name, 0.0)
+    trajets_text = form.get("trajets", "")
+    wo.trajets = [line.strip() for line in trajets_text.splitlines() if line.strip()]
+
+    source_paths = sorted(tmp_dir.iterdir())
+    filename, source_type = storage.store_source_files(user["id"], source_paths, wo.date)
+    wo.source_filename = filename
+    wo.source_type = source_type
+
+    db.insert_work_order(user["id"], wo)
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return _redirect("/history")
+
+
+# --- Historique -------------------------------------------------------------
+
+@app.get("/history", response_class=HTMLResponse)
+def history_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    work_orders = db.list_work_orders(user["id"])
+    return templates.TemplateResponse(
+        "history.html", {"request": request, "user": user, "work_orders": work_orders}
+    )
+
+
+@app.get("/history/{work_order_id}/edit", response_class=HTMLResponse)
+def edit_work_order_page(request: Request, work_order_id: int):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    wo = db.get_work_order(user["id"], work_order_id)
+    if wo is None:
+        return _redirect("/history")
+    return templates.TemplateResponse(
+        "edit_work_order.html",
+        {
+            "request": request,
+            "user": user,
+            "wo": wo,
+            "summary_fields": SUMMARY_FIELD_NAMES,
+            "trajets_text": "\n".join(wo.trajets),
+        },
+    )
+
+
+@app.post("/history/{work_order_id}/edit")
+async def edit_work_order_submit(request: Request, work_order_id: int):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    wo = db.get_work_order(user["id"], work_order_id)
+    if wo is None:
+        return _redirect("/history")
+    form = await request.form()
+    wo.date = form.get("date", "").strip()
+    wo.driver_name = form.get("driver_name", "").strip().upper()
+    wo.matricule = form.get("matricule", "").strip()
+    wo.notes = form.get("notes", "").strip()
+    wo.last_minute_change = form.get("last_minute_change") == "on"
+    for name in SUMMARY_FIELD_NAMES:
+        try:
+            setattr(wo, name, float((form.get(name, "0") or "0").replace(",", ".")))
+        except ValueError:
+            setattr(wo, name, 0.0)
+    trajets_text = form.get("trajets", "")
+    wo.trajets = [line.strip() for line in trajets_text.splitlines() if line.strip()]
+    db.update_work_order(user["id"], wo)
+    return _redirect("/history")
+
+
+@app.post("/history/{work_order_id}/delete")
+def delete_work_order(request: Request, work_order_id: int):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    wo = db.get_work_order(user["id"], work_order_id)
+    if wo is not None and wo.source_filename:
+        storage.delete_source_file(user["id"], wo.source_filename)
+    db.delete_work_order(user["id"], work_order_id)
+    return _redirect("/history")
+
+
+# --- Statistiques -----------------------------------------------------------
+
+@app.get("/stats", response_class=HTMLResponse)
+def stats_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    uid = user["id"]
+    return templates.TemplateResponse(
+        "stats.html",
+        {
+            "request": request,
+            "user": user,
+            "weekly": stats.weekly_totals(uid),
+            "monthly": stats.monthly_totals(uid),
+            "yearly": stats.yearly_totals(uid),
+            "summary": stats.summary_for_period(uid),
+            "top_trajets": stats.top_trajets(uid),
+            "hours_to_hm": stats.hours_to_hm,
+        },
+    )
+
+
+# --- Feuilles de paie ---------------------------------------------------
+
+@app.get("/payslips", response_class=HTMLResponse)
+def payslips_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    return templates.TemplateResponse(
+        "payslips.html", {"request": request, "user": user, "payslips": db.list_payslips(user["id"])}
+    )
+
+
+@app.get("/payslips/new", response_class=HTMLResponse)
+def payslip_new_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    return templates.TemplateResponse("payslip_new.html", {"request": request, "user": user, "error": None})
+
+
+@app.post("/payslips/new", response_class=HTMLResponse)
+async def payslip_upload(request: Request, file: UploadFile):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    if not file.filename:
+        return templates.TemplateResponse(
+            "payslip_new.html", {"request": request, "user": user, "error": "Choisis un fichier PDF."}
+        )
+    token = uuid.uuid4().hex
+    tmp_dir = TMP_DIR / token
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dest = tmp_dir / file.filename
+    with dest.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    data = payslip_parser.extract_payslip(dest)
+
+    return templates.TemplateResponse(
+        "payslip_review.html",
+        {"request": request, "user": user, "token": token, "data": data},
+    )
+
+
+@app.post("/payslips/save")
+async def payslip_save(request: Request):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    form = await request.form()
+    token = form.get("token", "")
+    tmp_dir = TMP_DIR / token
+    if not tmp_dir.exists():
+        return _redirect("/payslips")
+
+    p = Payslip()
+    p.period_start = form.get("period_start", "").strip()
+    p.period_end = form.get("period_end", "").strip()
+    for field_name in ("hs_25", "hs_50", "cumul_hs_25", "cumul_hs_50", "repos_differe"):
+        try:
+            setattr(p, field_name, float((form.get(field_name, "0") or "0").replace(",", ".")))
+        except ValueError:
+            setattr(p, field_name, 0.0)
+    recap_json = form.get("recap_json", "{}")
+    compteurs_json = form.get("compteurs_json", "{}")
+    try:
+        details = {"recap": json.loads(recap_json), "compteurs": json.loads(compteurs_json)}
+    except json.JSONDecodeError:
+        details = {"recap": {}, "compteurs": {}}
+    p.details_json = json.dumps(details, ensure_ascii=False)
+
+    source_path = next(tmp_dir.iterdir())
+    p.source_filename = storage.store_payslip_file(user["id"], source_path, p.period_start)
+
+    db.insert_payslip(user["id"], p)
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    return _redirect("/payslips")
+
+
+@app.get("/payslips/{payslip_id}", response_class=HTMLResponse)
+def payslip_detail(request: Request, payslip_id: int):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    p = db.get_payslip(user["id"], payslip_id)
+    if p is None:
+        return _redirect("/payslips")
+    details = {"recap": {}, "compteurs": {}}
+    if p.details_json:
+        try:
+            details = json.loads(p.details_json)
+        except json.JSONDecodeError:
+            pass
+    return templates.TemplateResponse(
+        "payslip_detail.html", {"request": request, "user": user, "p": p, "details": details}
+    )
+
+
+@app.post("/payslips/{payslip_id}/delete")
+def payslip_delete(request: Request, payslip_id: int):
+    user = _current_user(request)
+    if not user:
+        return _redirect("/login")
+    p = db.get_payslip(user["id"], payslip_id)
+    if p is not None and p.source_filename:
+        storage.delete_payslip_file(user["id"], p.source_filename)
+    db.delete_payslip(user["id"], payslip_id)
+    return _redirect("/payslips")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
