@@ -39,8 +39,10 @@ statistiques par semaine / mois / année.
    à gauche** avant d'enregistrer : l'OCR (lecture automatique) n'est pas fiable à 100 %,
    surtout sur des photos prises au téléphone (flou, reflet, pli du papier...).
    - **OT sur plusieurs pages** : si un ordre de travail tient sur 2 photos (ou plus), sélectionne-
-     les toutes ensemble (plusieurs fichiers à la fois dans **Choisir une photo ou un PDF...**, ou
-     plusieurs fichiers sélectionnés ensemble sur le téléphone) : elles sont lues comme un seul
+     les toutes ensemble (plusieurs fichiers à la fois dans **Choisir une photo ou un PDF...**) ou,
+     depuis le téléphone, prends chaque page avec **Prendre une photo** (ou ajoute-les avec
+     **Ajouter depuis la galerie**) : les photos s'accumulent dans une liste (avec ✕ pour en
+     retirer une), puis **Envoyer les N pages au PC** : elles sont lues comme un seul
      document (récapitulatif + tous les trajets, où qu'ils soient répartis) plutôt que comme des
      OT séparés et incomplets. Un document déjà chargé peut aussi recevoir une page de plus via
      **Choisir une photo ou un PDF...** (l'app demande si c'est un ajout ou un nouvel OT).

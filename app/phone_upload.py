@@ -40,8 +40,14 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
          background: #005fb8; color: white; cursor: pointer; }
   button:disabled { background: #a9a9a9; cursor: default; }
   #status { margin-top: 20px; font-size: 15px; }
-  #preview { margin-top: 16px; max-width: 90%; max-height: 240px; border-radius: 8px;
-         display: none; }
+  #list { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; max-width: 320px; margin: 8px auto;
+         padding: 6px; background: white; border: 1px solid #e5e5e5; border-radius: 8px;
+         text-align: left; font-size: 14px; }
+  .row img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; }
+  .row span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row button.del { width: 36px; max-width: 36px; margin: 0; padding: 8px; background: #a9a9a9; }
+  label.secondary { background: #4b5b6b; }
 </style>
 </head>
 <body>
@@ -49,31 +55,68 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
   <p>__INSTRUCTION__</p>
   <label for="f">__CHOOSE_LABEL__</label>
   <input type="file" id="f" accept="__ACCEPT__"__CAPTURE_ATTR__ __MULTIPLE_ATTR__>
-  <p id="multi-hint" style="display:none">Plusieurs fichiers sélectionnés ensemble = les pages
-  d'un même ordre de travail (envoyées dans l'ordre de sélection).</p>
-  <img id="preview">
+  __GALLERY_BLOCK__
+  <p id="count-hint" style="display:none"></p>
+  <div id="list"></div>
   <button id="send" disabled>Envoyer au PC</button>
   <div id="status"></div>
 <script>
-  const input = document.getElementById('f');
+  const MULTI = __MULTI_JS__;
+  const inputs = Array.from(document.querySelectorAll('input[type=file]'));
   const sendBtn = document.getElementById('send');
   const status = document.getElementById('status');
-  const preview = document.getElementById('preview');
-  const multiHint = document.getElementById('multi-hint');
-  let files = [];
+  const list = document.getElementById('list');
+  const countHint = document.getElementById('count-hint');
+  // Chaque prise de photo/sélection s'AJOUTE à la liste (un appareil photo ne renvoie qu'une
+  // photo à la fois, et remplacerait sinon la précédente) ; "ordre d'ajout" = ordre des pages.
+  let items = [];  // {file, url}
 
-  input.addEventListener('change', () => {
-    files = Array.from(input.files || []);
-    sendBtn.disabled = files.length === 0;
-    status.textContent = '';
-    multiHint.style.display = files.length > 1 ? 'block' : 'none';
-    if (files.length && files[0].type.startsWith('image/')) {
-      preview.src = URL.createObjectURL(files[0]);
-      preview.style.display = 'inline-block';
-    } else {
-      preview.style.display = 'none';
+  function render() {
+    list.innerHTML = '';
+    items.forEach((it, i) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      if (it.url) {
+        const img = document.createElement('img');
+        img.src = it.url;
+        row.appendChild(img);
+      }
+      const name = document.createElement('span');
+      name.textContent = MULTI ? ('Page ' + (i + 1) + ' : ' + (it.file.name || 'photo')) : (it.file.name || 'fichier');
+      row.appendChild(name);
+      const del = document.createElement('button');
+      del.className = 'del';
+      del.textContent = '✕';
+      del.setAttribute('aria-label', 'Retirer');
+      del.addEventListener('click', () => {
+        if (it.url) URL.revokeObjectURL(it.url);
+        items = items.filter(x => x !== it);
+        render();
+      });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+    sendBtn.disabled = items.length === 0;
+    sendBtn.textContent = items.length > 1 ? 'Envoyer les ' + items.length + ' pages au PC' : 'Envoyer au PC';
+    countHint.style.display = (MULTI && items.length > 0) ? 'block' : 'none';
+    countHint.textContent = items.length > 1
+      ? 'Ces ' + items.length + ' pages seront envoyées ensemble comme UN SEUL ordre de travail.'
+      : "Pour un ordre de travail sur plusieurs pages, ajoute les autres pages avant d'envoyer.";
+  }
+
+  inputs.forEach(input => input.addEventListener('change', () => {
+    const picked = Array.from(input.files || []);
+    input.value = '';  // permet de reprendre la même photo, et évite que le prochain choix écrase
+    if (!MULTI) {
+      items.forEach(it => it.url && URL.revokeObjectURL(it.url));
+      items = [];
     }
-  });
+    picked.forEach(file => items.push({
+      file, url: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    }));
+    status.textContent = '';
+    render();
+  }));
 
   async function sendOne(file, isAppend) {
     return fetch(window.location.pathname, {
@@ -88,15 +131,15 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
   }
 
   sendBtn.addEventListener('click', async () => {
-    if (!files.length) return;
+    if (!items.length) return;
     sendBtn.disabled = true;
-    for (let i = 0; i < files.length; i++) {
-      status.textContent = files.length > 1
-        ? `Envoi de la page ${i + 1}/${files.length}...`
+    for (let i = 0; i < items.length; i++) {
+      status.textContent = items.length > 1
+        ? `Envoi de la page ${i + 1}/${items.length}...`
         : 'Envoi en cours...';
       let response;
       try {
-        response = await sendOne(files[i], i > 0);
+        response = await sendOne(items[i].file, i > 0);
       } catch (e) {
         status.textContent = "Échec de l'envoi (connexion). Réessaie.";
         sendBtn.disabled = false;
@@ -108,11 +151,10 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
         return;
       }
     }
+    items.forEach(it => it.url && URL.revokeObjectURL(it.url));
+    items = [];
+    render();
     status.textContent = 'Envoyé ! Tu peux fermer cette page ou envoyer un autre fichier.';
-    input.value = '';
-    files = [];
-    multiHint.style.display = 'none';
-    preview.style.display = 'none';
   });
 </script>
 </body>
@@ -132,6 +174,16 @@ def _build_upload_page(
     html = html.replace("__ACCEPT__", accept)
     html = html.replace("__CAPTURE_ATTR__", ' capture="environment"' if capture else "")
     html = html.replace("__MULTIPLE_ATTR__", "multiple" if multiple else "")
+    html = html.replace("__MULTI_JS__", "true" if multiple else "false")
+    # Un appareil photo (capture) ne permet de prendre qu'une photo à la fois et n'ouvre pas la
+    # galerie : en plus, un second sélecteur sans "capture" pour ajouter des photos déjà prises.
+    gallery = ""
+    if capture and multiple:
+        gallery = (
+            '<label for="g" class="secondary">Ajouter depuis la galerie / fichiers</label>'
+            f'<input type="file" id="g" accept="{accept}" multiple>'
+        )
+    html = html.replace("__GALLERY_BLOCK__", gallery)
     return html.encode("utf-8")
 
 

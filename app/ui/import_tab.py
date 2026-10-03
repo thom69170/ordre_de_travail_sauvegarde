@@ -292,6 +292,9 @@ class ImportTab(ttk.Frame):
             self.winfo_toplevel(),
             on_file_received=self._receive_file_from_phone,
             waiting_text="En attente d'une photo... (tu peux en envoyer plusieurs à la suite)",
+            instruction="Prends en photo chaque page de l'ordre de travail (ou ajoute-les depuis la "
+                        "galerie), puis envoie-les toutes ensemble au PC.",
+            choose_label="Prendre une photo",
             multiple=True,
         )
 
