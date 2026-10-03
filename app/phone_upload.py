@@ -118,13 +118,14 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
     render();
   }));
 
-  async function sendOne(file, isAppend) {
+  async function sendOne(file, isAppend, total) {
     return fetch(window.location.pathname, {
       method: 'POST',
       headers: {
         'Content-Type': file.type || 'application/octet-stream',
         'X-Filename': encodeURIComponent(file.name || 'photo.jpg'),
         'X-Append': isAppend ? '1' : '0',
+        'X-Total': String(total),
       },
       body: file,
     });
@@ -139,7 +140,7 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
         : 'Envoi en cours...';
       let response;
       try {
-        response = await sendOne(items[i].file, i > 0);
+        response = await sendOne(items[i].file, i > 0, items.length);
       } catch (e) {
         status.textContent = "Échec de l'envoi (connexion). Réessaie.";
         sendBtn.disabled = false;
@@ -204,7 +205,7 @@ class PhoneUploadServer:
 
     def __init__(
         self,
-        on_file_received: Callable[[Path, bool], None],
+        on_file_received: Callable[[Path, bool, int], None],
         *,
         page_title: str = "Ordres de travail",
         instruction: str = "Prends une photo de l'ordre de travail ou choisis un fichier, puis envoie-le au PC.",
@@ -267,6 +268,10 @@ class PhoneUploadServer:
 
                 data = self.rfile.read(length)
                 is_append = self.headers.get("X-Append", "0") == "1"
+                try:
+                    batch_total = max(1, int(self.headers.get("X-Total", "1")))
+                except ValueError:
+                    batch_total = 1
 
                 raw_name = self.headers.get("X-Filename", "photo.jpg")
                 try:
@@ -286,7 +291,7 @@ class PhoneUploadServer:
                 self.end_headers()
 
                 try:
-                    on_file_received(dest_path, is_append)
+                    on_file_received(dest_path, is_append, batch_total)
                 except Exception:  # noqa: BLE001
                     pass
 

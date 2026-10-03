@@ -52,10 +52,14 @@ statistiques par semaine / mois / année.
      un fichier et de l'envoyer directement — pas d'appli à installer sur le téléphone. La photo
      reçue est traitée automatiquement, comme si elle avait été importée depuis le PC. Windows
      peut demander une autorisation de pare-feu la première fois (à accepter, sinon le téléphone
-     ne peut pas joindre le PC). **La fenêtre reste ouverte pour envoyer plusieurs photos à la
-     suite** avec le même QR code : si tu en envoies une nouvelle pendant que la précédente est
-     encore en cours d'analyse/relecture, elle est mise en attente (compteur affiché en haut) et
-     chargée automatiquement dès que tu enregistres ou réinitialises le formulaire courant.
+     ne peut pas joindre le PC). **La fenêtre reste ouverte pour envoyer plusieurs jours à la
+     suite** avec le même QR code (chaque envoi = un OT, de 1 ou 2 pages) : si tu en envoies un
+     nouveau pendant que le précédent est en cours d'analyse/relecture, il est mis en attente
+     (compteur affiché en haut) et chargé automatiquement dès que tu enregistres ou
+     réinitialises le formulaire courant. Avec Gemini, les OT en attente sont **analysés à
+     l'avance, un par un, pendant que tu relis le courant** : ils s'affichent donc instantanément
+     quand leur tour arrive. Le bouton **Recevoir depuis le téléphone...** reste utilisable
+     pendant une analyse (il remet la fenêtre du QR code au premier plan).
    - **Numéro de ligne** : chaque trajet peut être associé à un numéro de ligne (ex: "164 —
      CHARMILLES / TARARE GARE") — pratique quand tu fais plusieurs lignes différentes le même
      jour. Avec Gemini configuré, il est détecté automatiquement (lu depuis le code de service

@@ -174,7 +174,7 @@ class PayslipTab(ttk.Frame):
             default_suffix=".pdf",
         )
 
-    def _receive_file_from_phone(self, path: Path, is_append: bool = False):
+    def _receive_file_from_phone(self, path: Path, is_append: bool = False, batch_total: int = 1):
         # Une feuille de prépaie est toujours un seul PDF (jamais plusieurs photos à combiner) :
         # is_append (pertinent seulement pour un OT sur plusieurs pages, onglet Importer) est
         # ignoré ici. Comme pour l'onglet Importer, le téléphone peut envoyer plusieurs feuilles

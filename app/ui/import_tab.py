@@ -4,6 +4,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from datetime import date
 from pathlib import Path
@@ -31,6 +32,27 @@ FILE_TYPES = [
     ("Photos et PDF", "*.pdf *.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp"),
     ("Tous les fichiers", "*.*"),
 ]
+
+# Au-delà de ce délai sans avoir reçu toutes les pages annoncées par le téléphone (page perdue,
+# connexion coupée...), on analyse quand même ce qui est arrivé plutôt que de bloquer la file.
+PHONE_GROUP_TIMEOUT_SECONDS = 30
+
+
+class _PhoneGroup(list):
+    """Pages (fichiers) d'un même OT reçues du téléphone. Le téléphone annonce combien de pages
+    il envoie (expected) : l'analyse ne démarre qu'une fois toutes arrivées, pour ne pas payer
+    une analyse inutile sur la 1re page seule avant que la 2e n'arrive."""
+
+    def __init__(self, first: Path, expected: int = 1):
+        super().__init__([first])
+        self.expected = max(1, expected)
+        self.created = time.monotonic()
+
+    def is_complete(self) -> bool:
+        return (
+            len(self) >= self.expected
+            or time.monotonic() - self.created > PHONE_GROUP_TIMEOUT_SECONDS
+        )
 
 
 def _parse_user_date(text: str) -> str:
@@ -70,9 +92,17 @@ class ImportTab(ttk.Frame):
         # File d'attente des documents reçus du téléphone (chacun une liste de 1+ chemins - une
         # page envoyée en "ajout" rejoint le document précédent au lieu de former un nouveau
         # document, voir _receive_file_from_phone).
-        self._phone_queue: list[list[Path]] = []
+        self._phone_queue: list[_PhoneGroup] = []
         self._pending_append_target: list[Path] | None = None
         self._extraction_token = 0
+        self._phone_dialog = None
+        self._processing = False
+        self._start_retry_scheduled = False
+        # Pré-analyse (Gemini seulement) des OT en attente pendant que l'utilisateur relit le
+        # courant : seule l'extraction (petite) est gardée en mémoire, jamais les images. Une
+        # seule pré-analyse à la fois (PC peu puissant, quota Gemini).
+        self._analysis_cache: dict[tuple, object] = {}
+        self._prefetching: dict[tuple, threading.Event] = {}
 
         self._build_ui()
         self._maybe_show_ocr_banner()
@@ -288,7 +318,15 @@ class ImportTab(ttk.Frame):
     def _open_phone_upload_dialog(self):
         from app.ui.phone_upload_dialog import PhoneUploadDialog
 
-        PhoneUploadDialog(
+        # Déjà ouverte (le bouton reste actif pendant une analyse) : on la remet au premier plan
+        # au lieu d'en ouvrir une 2e avec un autre QR code.
+        if self._phone_dialog is not None and self._phone_dialog.winfo_exists():
+            self._phone_dialog.deiconify()
+            self._phone_dialog.lift()
+            self._phone_dialog.focus_force()
+            return
+
+        self._phone_dialog = PhoneUploadDialog(
             self.winfo_toplevel(),
             on_file_received=self._receive_file_from_phone,
             waiting_text="En attente d'une photo... (tu peux en envoyer plusieurs à la suite)",
@@ -298,25 +336,27 @@ class ImportTab(ttk.Frame):
             multiple=True,
         )
 
-    def _receive_file_from_phone(self, path: Path, is_append: bool = False):
-        # Le téléphone peut envoyer plusieurs fichiers à la suite avec le même QR code. Une page
-        # envoyée en "ajout" (plusieurs fichiers sélectionnés ensemble sur le téléphone pour un
-        # même OT sur plusieurs pages) rejoint le document auquel elle appartient - qu'il soit
-        # déjà en cours de traitement ou encore en attente dans la file - au lieu de former un
-        # nouveau document. Sinon, un nouveau document est mis en file : il n'est chargé que
-        # quand le formulaire actuel a été enregistré ou réinitialisé, pour ne jamais écraser une
-        # analyse en cours ou pas encore relue.
+    def _receive_file_from_phone(self, path: Path, is_append: bool = False, batch_total: int = 1):
+        # Le téléphone peut envoyer plusieurs OT à la suite avec le même QR code, même pendant une
+        # analyse. Une page envoyée en "ajout" (les pages d'un même OT sont envoyées ensemble)
+        # rejoint le document auquel elle appartient - déjà chargé ou encore en file - au lieu de
+        # former un nouveau document. Sinon, un nouveau document est mis en file : il n'est chargé
+        # que quand le formulaire actuel a été enregistré ou réinitialisé, pour ne jamais écraser
+        # une analyse en cours ou pas encore relue.
         if is_append and self._pending_append_target is not None:
             self._pending_append_target.append(path)
             if self._pending_append_target is self.current_source_paths:
                 self._load_document(self.current_source_paths, " (reçu du téléphone)", is_append=True)
             else:
                 self._update_queue_label()
+                self._maybe_start_next_from_queue()
+                self._start_prefetch_if_idle()
             return
-        group: list[Path] = [path]
+        group = _PhoneGroup(path, batch_total)
         self._pending_append_target = group
         self._phone_queue.append(group)
         self._maybe_start_next_from_queue()
+        self._start_prefetch_if_idle()
 
     def _maybe_start_next_from_queue(self):
         self._update_queue_label()
@@ -324,15 +364,66 @@ class ImportTab(ttk.Frame):
             return
         if not self._phone_queue:
             return
+        if not self._phone_queue[0].is_complete():
+            # Toutes les pages de cet OT ne sont pas encore arrivées : on patiente un instant.
+            if not self._start_retry_scheduled:
+                self._start_retry_scheduled = True
+                self.after(1000, self._retry_start)
+            return
         group = self._phone_queue.pop(0)
         self._update_queue_label()
         self._load_document(group, " (reçu du téléphone)")
 
+    def _retry_start(self):
+        self._start_retry_scheduled = False
+        self._maybe_start_next_from_queue()
+        self._start_prefetch_if_idle()
+
     def _update_queue_label(self):
         n = len(self._phone_queue)
-        self.queue_label.config(
-            text=f"+{n} en attente (envoyé{'s' if n != 1 else ''} depuis le téléphone)" if n else ""
-        )
+        if not n:
+            self.queue_label.config(text="")
+            return
+        ready = sum(1 for g in self._phone_queue if tuple(g) in self._analysis_cache)
+        text = f"+{n} en attente (envoyé{'s' if n != 1 else ''} depuis le téléphone"
+        text += f", {ready} déjà analysé{'s' if ready != 1 else ''})" if ready else ")"
+        self.queue_label.config(text=text)
+
+    def _start_prefetch_if_idle(self):
+        """Analyse à l'avance (une à la fois) le prochain OT en file, pendant que l'utilisateur
+        relit le courant - sans jamais en lancer pendant l'analyse du courant ni sans clé Gemini
+        (l'OCR local ralentirait trop un PC peu puissant pendant la relecture)."""
+        if self._processing or self._prefetching or not config.get_gemini_api_key():
+            return
+        for group in self._phone_queue:
+            key = tuple(group)
+            if group.is_complete() and key not in self._analysis_cache:
+                event = threading.Event()
+                self._prefetching[key] = event
+                threading.Thread(
+                    target=self._prefetch_worker, args=(key, event), daemon=True
+                ).start()
+                return
+
+    def _prefetch_worker(self, key: tuple, event: threading.Event):
+        try:
+            pages: list[Image.Image] = []
+            for p in key:
+                pages.extend(ocr_engine.load_pages(p))
+            extraction = run_extraction(pages)
+            del pages
+            if extraction is not None:
+                self._analysis_cache[key] = extraction
+        except Exception:  # noqa: BLE001
+            pass  # pas de cache : l'OT sera simplement analysé à la demande, comme avant
+        finally:
+            event.set()
+            self.after(0, lambda: self._after_prefetch(key))
+
+    def _after_prefetch(self, key: tuple):
+        self._prefetching.pop(key, None)
+        self._update_queue_label()
+        self._start_prefetch_if_idle()
 
     def _on_reset_clicked(self):
         self.reset_form()
@@ -362,8 +453,10 @@ class ImportTab(ttk.Frame):
     def _set_processing(self, active: bool):
         """Rend l'analyse en cours difficile à manquer (barre de progression animée + texte en
         gras) plutôt qu'un simple petit texte de statut facile à ne pas remarquer."""
+        self._processing = active
+        # Le bouton téléphone reste actif : on peut rouvrir/remettre au premier plan la fenêtre
+        # du QR code pour envoyer d'autres OT pendant une analyse (ils partent en file d'attente).
         self.choose_btn.config(state="disabled" if active else "normal")
-        self.phone_btn.config(state="disabled" if active else "normal")
         if active:
             self.status_label.config(text="⏳ Analyse de l'ordre de travail en cours...")
             self.progress.pack(fill="x", before=self.banner_holder)
@@ -385,8 +478,13 @@ class ImportTab(ttk.Frame):
             self.after(0, lambda exc=exc: self._on_process_error(exc, token))
             return
 
-        extraction = None
-        if ocr_engine.is_available() or config.get_gemini_api_key():
+        # Déjà analysé à l'avance (ou en cours de l'être) pendant la relecture du précédent ?
+        key = tuple(paths)
+        pending = self._prefetching.get(key)
+        if pending is not None:
+            pending.wait(timeout=120)
+        extraction = self._analysis_cache.pop(key, None)
+        if extraction is None and (ocr_engine.is_available() or config.get_gemini_api_key()):
             try:
                 extraction = run_extraction(pages)
             except Exception:  # noqa: BLE001
@@ -412,6 +510,7 @@ class ImportTab(ttk.Frame):
         if token != self._extraction_token:
             return  # une extraction plus récente (page ajoutée entre-temps) a pris le relais
         self._set_processing(False)
+        self._start_prefetch_if_idle()
         self.current_pages = pages
         self._show_thumbnail(pages[0])
         self.open_file_btn.config(state="normal")
