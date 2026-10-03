@@ -90,7 +90,9 @@ statistiques par semaine / mois / année.
    bouton **Voir tous les détails...**.
 6. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
-   l'onglet, avec le lien pour générer une clé gratuite. **Si tu configures une clé, tes photos
+   l'onglet, avec le lien pour générer une clé gratuite. Avec une clé, la lecture passe
+   **uniquement par Gemini** (l'OCR local n'est même pas lancé : plus rapide, surtout sur un PC
+   peu puissant) ; l'OCR local ne sert plus que de repli automatique si Gemini échoue. **Si tu configures une clé, tes photos
    sont alors envoyées aux serveurs de Google pour être analysées** (l'onglet l'explique
    clairement) ; sans clé, tout continue de fonctionner en local comme avant. Cet onglet permet
    aussi de vérifier et d'installer les mises à jour (voir ci-dessous).

@@ -3,6 +3,11 @@
 Utilisé uniquement si l'utilisateur a renseigné une clé API dans l'onglet Paramètres. Repose
 uniquement sur la bibliothèque standard (urllib) pour éviter d'ajouter une dépendance lourde au
 premier lancement.
+
+Volontairement SANS aucun appel à l'OCR local (Tesseract) : lent sur un PC peu puissant, et testé
+sans effet sur la qualité (mêmes récapitulatifs, mêmes trajets - et même meilleurs trajets sur un
+OT de plusieurs pages, où l'OCR remplaçait la liste de Gemini en perdant les numéros de ligne).
+Tesseract ne sert plus que de repli si Gemini échoue (voir app/extraction.py).
 """
 from __future__ import annotations
 
@@ -16,7 +21,6 @@ from datetime import datetime, timedelta
 
 from PIL import Image
 
-from app import ocr_engine
 from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES, format_trajet
 
 MODEL_NAME = "gemini-3.5-flash-lite"
@@ -76,11 +80,9 @@ Dim.Travail P, Férié P, TPS OC P. Ces dernières colonnes (Repas/Primes/Dim.Tr
 sont très souvent vides : mets alors 0.
 
 Ce tableau récapitulatif est la partie la plus importante et la plus difficile à lire (petits
-chiffres, une seule ligne de données). Si une dernière image légendée "Agrandissement du tableau
-récapitulatif" est fournie, sers-t'en en priorité pour lire précisément chaque chiffre (elle montre
-en gros l'en-tête des colonnes juste au-dessus de la ligne de valeurs) ; sinon base-toi sur les
-pages complètes. Lis chaque chiffre un par un avant de répondre, ne devine pas à partir d'une
-impression générale.
+chiffres, une seule ligne de données) : utilise les agrandissements de la moitié basse de la
+dernière page pour lire précisément chaque chiffre sous l'en-tête de sa colonne. Lis chaque chiffre
+un par un avant de répondre, ne devine pas à partir d'une impression générale.
 
 Réponds uniquement avec les champs demandés par le schéma :
 - date au format ISO AAAA-MM-JJ
@@ -197,31 +199,6 @@ def _image_to_png_b64(image: Image.Image) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def _locate_summary_zoom(pages: list[Image.Image]) -> Image.Image | None:
-    """Retrouve et agrandit le tableau récapitulatif (en-tête + ligne de données) pour aider
-    Gemini à lire précisément les petits chiffres. S'appuie sur l'OCR local (Tesseract) pour
-    localiser la zone : un pourcentage fixe serait trop peu fiable sur une photo cadrée
-    différemment d'une fois sur l'autre. Retourne None si Tesseract est indisponible ou si la
-    zone n'a pas pu être repérée (l'extraction se fait alors seulement sur les pages complètes)."""
-    if not ocr_engine.is_available():
-        return None
-    from app import parser
-
-    for page in reversed(pages):  # le tableau est presque toujours sur la dernière page
-        try:
-            region = parser.find_summary_table_region(page)
-        except Exception:  # noqa: BLE001
-            region = None
-        if region is not None:
-            if region.width < 2200:
-                scale = 2200 / region.width
-                region = region.resize(
-                    (int(region.width * scale), int(region.height * scale)), Image.LANCZOS
-                )
-            return region
-    return None
-
-
 def _split_page_halves(page: Image.Image) -> list[Image.Image]:
     """Découpe une page en deux moitiés (haut/bas, avec un léger recouvrement) agrandies, pour
     que les lignes du tableau des services (souvent nombreuses et petites, surtout sur une photo
@@ -239,26 +216,6 @@ def _split_page_halves(page: Image.Image) -> list[Image.Image]:
             half = half.resize((int(half.width * scale), int(half.height * scale)), Image.LANCZOS)
         result.append(half)
     return result
-
-
-def _tesseract_trajets(pages: list[Image.Image]) -> list[str] | None:
-    """Récupère la liste des trajets via l'OCR local + une recherche par motif (regex), qui
-    énumère mécaniquement chaque occurrence sans "se lasser" d'une répétition — contrairement à
-    Gemini qui a tendance à résumer/tronquer les listes très répétitives plutôt que de toutes les
-    lister. Retourne None si Tesseract est indisponible."""
-    if not ocr_engine.is_available():
-        return None
-    from app import parser
-
-    texts = []
-    for page in pages:
-        try:
-            texts.append(ocr_engine.ocr_text(page, psm=6))
-        except Exception:  # noqa: BLE001
-            pass
-    if not texts:
-        return None
-    return parser.extract_trajets("\n".join(texts))
 
 
 def _call_gemini(api_key: str, parts: list[dict], response_schema: dict | None = None) -> dict:
@@ -324,16 +281,6 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         parts.append({
             "inline_data": {"mime_type": "image/png", "data": _image_to_png_b64(bottom_half)}
         })
-    zoom = _locate_summary_zoom(pages)
-    zoom_found = zoom is not None
-    if zoom is not None:
-        parts.append({"text": "Agrandissement du tableau récapitulatif (en-tête + ligne de données) :"})
-        parts.append({
-            "inline_data": {
-                "mime_type": "image/png",
-                "data": _image_to_png_b64(zoom),
-            }
-        })
 
     raw = _call_gemini(api_key, parts, response_schema=RESPONSE_SCHEMA)
     try:
@@ -374,27 +321,8 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         if not trajet_text:
             continue
         gemini_trajets.append(format_trajet(ligne, _normalize_trajet(trajet_text)))
-    tesseract_trajets = _tesseract_trajets(pages)
+    result.trajets = gemini_trajets
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
-    if tesseract_trajets and len(tesseract_trajets) > len(gemini_trajets):
-        result.trajets = tesseract_trajets
-        result.warnings.append(
-            f"Trajets obtenus via l'OCR local ({len(tesseract_trajets)} trouvés contre "
-            f"{len(gemini_trajets)} par Gemini, qui a tendance à en manquer sur les listes très "
-            "répétitives) : vérifie quand même la liste."
-        )
-    else:
-        result.trajets = gemini_trajets
-        if tesseract_trajets and len(gemini_trajets) > len(tesseract_trajets):
-            # L'OCR local ne peut structurellement pas compter un trajet "HLP" (il exige un
-            # séparateur "/", jamais utilisé pour un HLP), donc un surplus côté Gemini est
-            # suspect - sans certitude sur la cause (HLP compté par erreur, ou autre lecture
-            # incertaine), un simple écart de compte mérite une vérification.
-            result.warnings.append(
-                f"Gemini a trouvé plus de trajets ({len(gemini_trajets)}) que l'OCR local "
-                f"({len(tesseract_trajets)}) : vérifie la liste (un trajet \"HLP\" à vide a pu "
-                "être compté par erreur, ou une autre lecture incertaine)."
-            )
     if missing_fields:
         result.warnings.append(
             "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)
@@ -405,12 +333,6 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
             f"Service édité le {edition_date} à {edition_time or '?'}, moins de 48h avant la "
             "prise de service : changement de dernière minute détecté, case cochée "
             "automatiquement - vérifie si la prime associée s'applique."
-        )
-    if not zoom_found:
-        result.warnings.append(
-            "Agrandissement automatique du tableau récapitulatif non trouvé sur ce document "
-            "(l'OCR local n'a pas repéré l'en-tête TPS/TAD/TTE...) : Gemini a lu la page entière, "
-            "vérifie particulièrement bien le tableau récapitulatif."
         )
     result.warnings.append("Lecture effectuée par l'IA Gemini : vérifie quand même les champs.")
     return result
