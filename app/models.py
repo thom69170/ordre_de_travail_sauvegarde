@@ -114,6 +114,10 @@ class ExtractionResult:
     summary: dict[str, float] = field(default_factory=dict)
     trajets: list[str] = field(default_factory=list)
     last_minute_change: bool = False
+    # Rotation (sens horaire : 90/180/270) à appliquer aux pages pour les remettre à l'endroit
+    # (document scanné à l'envers), et texte libre lu sur le document (Feuille de Route).
+    rotation: int = 0
+    notes: str = ""
     raw_text_page1: str = ""
     raw_text_summary_row: str = ""
     warnings: list[str] = field(default_factory=list)

@@ -38,6 +38,15 @@ statistiques par semaine / mois / année.
    **Vérifie toujours les valeurs pré-remplies en les comparant à l'aperçu de la photo affiché
    à gauche** avant d'enregistrer : l'OCR (lecture automatique) n'est pas fiable à 100 %,
    surtout sur des photos prises au téléphone (flou, reflet, pli du papier...).
+   - **Deux formats d'ordre de travail** : le nouveau format **« Feuille de Route »** (titre
+     « Feuille de Route », avec PS/FS/Amplitude/TTE en haut et un tableau de courses) et
+     l'ancien « ORDRE DE TRAVAIL » (avec son tableau récapitulatif) sont reconnus
+     automatiquement. Pour la Feuille de Route, l'app relève la date, le conducteur, le TTE et
+     l'amplitude, et les courses (une par ligne en gras, avec leur numéro de ligne ; les HLP,
+     battements, coupures et entretiens sont ignorés) ; les autres colonnes de l'ancien
+     récapitulatif (TPS, TAD...) n'existent plus sur ce format et restent à 0. Un document
+     **scanné à l'envers** ou de travers est remis à l'endroit automatiquement (l'aperçu aussi).
+     Ce nouveau format **nécessite une clé Gemini** : l'OCR local ne le reconnaît pas.
    - **OT sur plusieurs pages** : si un ordre de travail tient sur 2 photos (ou plus), sélectionne-
      les toutes ensemble (plusieurs fichiers à la fois dans **Choisir une photo ou un PDF...**) ou,
      depuis le téléphone, prends chaque page avec **Prendre une photo** (ou ajoute-les avec

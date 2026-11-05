@@ -263,7 +263,9 @@ class ImportTab(ttk.Frame):
                 bar,
                 text="La lecture automatique utilise l'OCR local (Tesseract) : rapide et gratuit, "
                      "mais souvent imprécis — attends-toi à devoir corriger plusieurs champs à la "
-                     "main. Une clé API Gemini (gratuite) rend la lecture bien plus fiable.",
+                     "main. Une clé API Gemini (gratuite) rend la lecture bien plus fiable, et "
+                     "elle est indispensable pour le nouveau format « Feuille de Route » (non "
+                     "reconnu par l'OCR local).",
                 bg=WARN_BG, fg=WARN_FG, anchor="w", justify="left", wraplength=700,
             ).pack(side="left", fill="x", expand=True)
             ttk.Button(
@@ -511,6 +513,10 @@ class ImportTab(ttk.Frame):
             return  # une extraction plus récente (page ajoutée entre-temps) a pris le relais
         self._set_processing(False)
         self._start_prefetch_if_idle()
+        if extraction is not None and extraction.rotation:
+            # Document scanné à l'envers : l'aperçu est remis à l'endroit pour pouvoir comparer
+            # avec les valeurs lues (le fichier original, lui, n'est pas modifié).
+            pages = [page.rotate(-extraction.rotation, expand=True) for page in pages]
         self.current_pages = pages
         self._show_thumbnail(pages[0])
         self.open_file_btn.config(state="normal")
@@ -522,6 +528,8 @@ class ImportTab(ttk.Frame):
             return
 
         self.last_minute_var.set(bool(extraction.last_minute_change))
+        if extraction.notes and not self.notes_text.get("1.0", "end").strip():
+            self.notes_text.insert("1.0", extraction.notes)
 
         if extraction.date:
             try:

@@ -15,6 +15,7 @@ import base64
 import io
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -32,10 +33,18 @@ TIMEOUT_SECONDS = 60
 # convention collective de l'utilisateur.
 LAST_MINUTE_THRESHOLD = timedelta(hours=48)
 
-PROMPT = """Tu analyses un "ordre de travail" (feuille de route) d'un conducteur de bus/car en France.
-Le document a 1 ou plusieurs pages. Sur la première page, un en-tête indique le nom du conducteur,
-son matricule (nombre) et la date du jour (ex: "Jeudi 16 JUILLET 2026"). Le corps liste les
-services de la journée, un bloc par ligne de service.
+PROMPT = """Tu analyses un document de travail journalier d'un conducteur de bus/car en France. Il
+existe DEUX formats, à reconnaître d'abord grâce au titre du document (renvoie-le dans "format") :
+- FORMAT B : titre "Feuille de Route" (format actuel) - voir la section "FORMAT B" plus bas.
+- FORMAT A : titre "ORDRE DE TRAVAIL" (ancien format) - voir la section "FORMAT A" ci-dessous.
+Le document a 1 ou plusieurs pages, et peut avoir été scanné à l'envers ou de travers : lis-le
+quand même normalement et indique dans "rotation_degrees" la rotation (sens horaire : 0, 90, 180
+ou 270) à appliquer à la page pour qu'elle soit à l'endroit (0 si elle l'est déjà).
+
+=== FORMAT A : "ORDRE DE TRAVAIL" (ancien format) ===
+Sur la première page, un en-tête indique le nom du conducteur, son matricule (nombre) et la date
+du jour (ex: "Jeudi 16 JUILLET 2026"). Le corps liste les services de la journée, un bloc par ligne
+de service.
 
 Trois types de blocs à bien distinguer :
 - Les blocs "HLP" ("Haut Le Pied", conducteur seul sans passager - trajet à vide entre le dépôt
@@ -84,13 +93,43 @@ chiffres, une seule ligne de données) : utilise les agrandissements de la moiti
 dernière page pour lire précisément chaque chiffre sous l'en-tête de sa colonne. Lis chaque chiffre
 un par un avant de répondre, ne devine pas à partir d'une impression générale.
 
+=== FORMAT B : "Feuille de Route" (format actuel) ===
+Titre "Feuille de Route". En-tête : "NOM PRÉNOM - matricule" (ex: "MERCIER THOMAS - 9104") et la
+date du jour de service en toutes lettres (ex: "mercredi 04 novembre 2026"). Un petit texte
+"le JJ/MM/AAAA à HH:MM" près du titre est la date/heure d'ÉDITION du document. Un cadre en haut
+donne "PS :" (prise de service), "FS :" (fin de service), "Amplitude :", "TTE :", "Indem. Coup. :"
+et "Indem. Ampl. :" (tous au format HH:MM), ainsi que le centre et le "N° de service". Il n'y a
+PAS de tableau récapitulatif en centièmes d'heure dans ce format.
+Puis vient un tableau COURSE / DEBUT / LIEU DE DEPART / FIN / LIEU DE FIN / TEMPS / KMS dont les
+lignes sont de deux sortes :
+- Les lignes EN GRAS qui commencent par un NUMÉRO DE LIGNE collé juste avant l'heure de début, ex :
+  "237 12:20  Tarare Gare  13:36  Cours-La-Ville le Bourg  01:16  42,27". Ce sont les VRAIS
+  trajets : ajoute UNE entrée dans "trajets" pour CHACUNE, même si elle ressemble à la précédente
+  (les allers-retours répétés sont normaux). "ligne" = ce numéro ("237"), "trajet" = "LIEU DE
+  DEPART / LIEU DE FIN" sans les heures. Sous chaque course, une ligne grisée du type
+  "23721 / 70351 / /" est un code interne : ce n'est ni une course ni le numéro de ligne.
+- Les lignes NON grasses ne sont JAMAIS des trajets, ignore-les toutes : "PS", "FS", "HLP" (trajet
+  à vide), "BATT" (battement/attente), "ENTRE" (entretien), les lignes "Coupure ..." (grisées).
+Compte les lignes en gras (courses) avant de répondre : ta liste "trajets" doit avoir exactement
+autant d'entrées. En bas : "Kilomètres ..." (ignore-les), "Commentaires Exploitation" et "Primes
+et Indemnités" (cadres de texte, souvent vides).
+Pour le FORMAT B : "summary" = 0 partout (voir plus bas), et renvoie "tte_hhmm" et
+"amplitude_hhmm" recopiés tels quels du cadre (HH:MM, ex: "07:37" et "09:40").
+
 Réponds uniquement avec les champs demandés par le schéma :
+- format : "A" ou "B"
+- rotation_degrees : 0, 90, 180 ou 270 (voir plus haut)
 - date au format ISO AAAA-MM-JJ
 - tous les nombres en notation décimale avec un point (jamais de virgule)
 - "summary" DOIT contenir une valeur numérique pour CHACUNE des 16 colonnes, dans le même ordre
   que le tableau, même quand la case est vide (0) ou que tu n'es pas sûr (fais ta meilleure
   estimation plutôt que d'omettre le champ - un champ manquant est traité comme une erreur bien
-  plus grave qu'une valeur légèrement imprécise)
+  plus grave qu'une valeur légèrement imprécise). FORMAT B : mets 0 pour tous les champs
+  (il n'y a pas de tableau récapitulatif).
+- "tte_hhmm" et "amplitude_hhmm" : FORMAT B uniquement (chaîne vide en FORMAT A)
+- "notes_text" : FORMAT B uniquement : le texte NON VIDE des cadres "Commentaires Exploitation" et
+  "Primes et Indemnités", plus les valeurs non nulles de "Indem. Coup." / "Indem. Ampl." (ex:
+  "Indem. Coup. : 01:30"), une information par ligne ; chaîne vide s'il n'y a rien
 - "trajets" : liste des VRAIS trajets de service (avec code de service, séparateur "/") ET des
   blocs "PERISCOL" (convertis en "Billet collectif", voir ci-dessus) tels qu'ils apparaissent
   dans le tableau, un par bloc rencontré (les doublons sont normaux et voulus). N'INCLUS JAMAIS
@@ -99,17 +138,20 @@ Réponds uniquement avec les champs demandés par le schéma :
   - "ligne" : le numéro de ligne (voir ci-dessus), en chiffres uniquement, sans les lettres qui
     suivent ; chaîne vide si tu ne le trouves vraiment pas
   - "trajet" : "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre alphabétique, sans les
-    codes entre parenthèses ni la mention GIR/QUAI)
+    codes entre parenthèses ni la mention GIR/QUAI ni les heures)
 - "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus, y compris ceux du
   tableau récapitulatif où tu as dû deviner (vide seulement si tout est clair)
 
-En haut de la première page figure aussi une ligne "Edition du JJ/MM/AAAA à HH:MM" (parfois
+FORMAT A : en haut de la première page figure une ligne "Edition du JJ/MM/AAAA à HH:MM" (parfois
 répétée plusieurs fois à cause de la mise en page du document) : c'est la date et l'heure
 d'impression/modification de cet ordre de travail. Dans le tableau des services, la toute
 première ligne est toujours celle de "PRISE DE SERVICE" ; la première heure de sa colonne
-"HEURE Début Fin" (ex: "06h45" dans "06h45 07h00") est l'heure de prise de service. Renvoie ces
-informations dans "edition_date" (AAAA-MM-JJ), "edition_time" (HH:MM) et "prise_service_time"
-(HH:MM). Laisse-les vides si tu ne les trouves vraiment pas, plutôt que de deviner.
+"HEURE Début Fin" (ex: "06h45" dans "06h45 07h00") est l'heure de prise de service.
+FORMAT B : l'édition est le petit texte "le JJ/MM/AAAA à HH:MM" près du titre, et la prise de
+service est l'heure "PS :" du cadre en haut (ex: "11:39").
+Renvoie ces informations dans "edition_date" (AAAA-MM-JJ), "edition_time" (HH:MM) et
+"prise_service_time" (HH:MM). Laisse-les vides si tu ne les trouves vraiment pas, plutôt que de
+deviner.
 """
 
 RESPONSE_SCHEMA = {
@@ -118,9 +160,14 @@ RESPONSE_SCHEMA = {
         "driver_name": {"type": "STRING"},
         "matricule": {"type": "STRING"},
         "date": {"type": "STRING"},
+        "format": {"type": "STRING"},
+        "rotation_degrees": {"type": "INTEGER"},
         "edition_date": {"type": "STRING"},
         "edition_time": {"type": "STRING"},
         "prise_service_time": {"type": "STRING"},
+        "tte_hhmm": {"type": "STRING"},
+        "amplitude_hhmm": {"type": "STRING"},
+        "notes_text": {"type": "STRING"},
         "summary": {
             "type": "OBJECT",
             "properties": {name: {"type": "NUMBER"} for name in SUMMARY_FIELD_NAMES},
@@ -184,11 +231,24 @@ def _detect_last_minute_change(
 
 def _normalize_trajet(raw: str) -> str:
     """Force l'ordre alphabétique des deux lieux, quoi que Gemini ait renvoyé : sans ça, "A / B"
-    et "B / A" seraient comptés comme deux trajets différents dans les statistiques."""
-    parts = [p.strip(" .-") for p in raw.split("/")]
+    et "B / A" seraient comptés comme deux trajets différents dans les statistiques. Met aussi
+    les lieux en majuscules (la Feuille de Route les écrit en casse mixte, "Tarare Gare", l'ancien
+    ordre de travail en majuscules) pour qu'un même lieu ne soit jamais compté deux fois."""
+    parts = [p.strip(" .-").upper() for p in raw.split("/")]
     if len(parts) != 2 or not all(parts):
         return raw.strip()
-    return " / ".join(sorted(parts, key=str.upper))
+    return " / ".join(sorted(parts))
+
+
+def _hhmm_to_hours(text: str) -> float | None:
+    """"07:37" -> 7.62 (heures décimales, centièmes), None si illisible."""
+    match = re.match(r"^\s*(\d{1,3})\s*[hH:]\s*(\d{2})\s*$", text or "")
+    if not match:
+        return None
+    hours, minutes = int(match.group(1)), int(match.group(2))
+    if minutes > 59:
+        return None
+    return round(hours + minutes / 60, 2)
 
 
 def _image_to_png_b64(image: Image.Image) -> str:
@@ -218,7 +278,15 @@ def _split_page_halves(page: Image.Image) -> list[Image.Image]:
     return result
 
 
-def _call_gemini(api_key: str, parts: list[dict], response_schema: dict | None = None) -> dict:
+# Erreurs temporaires côté Google (ex: 503 "high demand", fréquent aux heures de pointe) : on
+# réessaie quelques fois avant d'abandonner, plutôt que de basculer tout de suite sur l'OCR local.
+RETRYABLE_STATUS_CODES = (500, 502, 503, 504)
+RETRY_DELAYS_SECONDS = (3, 8, 15)
+
+
+def _call_gemini(
+    api_key: str, parts: list[dict], response_schema: dict | None = None, retry: bool = True
+) -> dict:
     url = f"{API_BASE}/{MODEL_NAME}:generateContent?key={api_key}"
     body: dict = {"contents": [{"parts": parts}]}
     if response_schema is not None:
@@ -227,19 +295,30 @@ def _call_gemini(api_key: str, parts: list[dict], response_schema: dict | None =
             "response_schema": response_schema,
         }
     data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        if exc.code in (400, 401, 403):
-            raise GeminiError("Clé API refusée ou invalide.") from exc
-        if exc.code == 429:
-            raise GeminiError("Quota Gemini dépassé pour le moment, réessaie plus tard.") from exc
-        raise GeminiError(f"Erreur Gemini ({exc.code}) : {detail[:200]}") from exc
-    except urllib.error.URLError as exc:
-        raise GeminiError(f"Connexion à Gemini impossible : {exc.reason}") from exc
+    delays = RETRY_DELAYS_SECONDS if retry else ()
+    for attempt in range(len(delays) + 1):
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code in (400, 401, 403):
+                raise GeminiError("Clé API refusée ou invalide.") from exc
+            if exc.code == 429:
+                raise GeminiError("Quota Gemini dépassé pour le moment, réessaie plus tard.") from exc
+            if exc.code in RETRYABLE_STATUS_CODES and attempt < len(delays):
+                time.sleep(delays[attempt])
+                continue
+            if exc.code in RETRYABLE_STATUS_CODES:
+                raise GeminiError(
+                    f"Gemini est temporairement surchargé (erreur {exc.code}), réessaie dans "
+                    "quelques minutes."
+                ) from exc
+            raise GeminiError(f"Erreur Gemini ({exc.code}) : {detail[:200]}") from exc
+        except urllib.error.URLError as exc:
+            raise GeminiError(f"Connexion à Gemini impossible : {exc.reason}") from exc
+    raise GeminiError("Gemini n'a pas répondu.")  # inatteignable, garde le type de retour sûr
 
 
 def test_api_key(api_key: str) -> tuple[bool, str]:
@@ -248,7 +327,7 @@ def test_api_key(api_key: str) -> tuple[bool, str]:
     if not api_key:
         return False, "Aucune clé saisie."
     try:
-        result = _call_gemini(api_key, [{"text": "Réponds uniquement par le mot : OK"}])
+        result = _call_gemini(api_key, [{"text": "Réponds uniquement par le mot : OK"}], retry=False)
     except GeminiError as exc:
         return False, str(exc)
     except Exception as exc:  # noqa: BLE001
@@ -261,7 +340,9 @@ def test_api_key(api_key: str) -> tuple[bool, str]:
     return True, f"Clé valide (réponse : {text.strip()[:50]})"
 
 
-def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResult:
+def extract_from_pages(
+    pages: list[Image.Image], api_key: str, _already_rotated: bool = False
+) -> ExtractionResult:
     """Envoie les pages du document à Gemini et reconstruit un ExtractionResult."""
     parts: list[dict] = [{"text": PROMPT}]
     for i, page in enumerate(pages, start=1):
@@ -289,6 +370,24 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
         raise GeminiError(f"Réponse Gemini illisible : {exc}") from exc
 
+    # Document scanné à l'envers/de travers : Gemini le lit mal (testé : 3 trajets sur 4, dont un
+    # faux, contre 4 exacts une fois la page remise à l'endroit). Il indique la rotation à
+    # appliquer ; on remet les pages à l'endroit et on relit (une seconde analyse, seulement pour
+    # ces documents - les autres n'ont aucun coût en plus).
+    rotation = payload.get("rotation_degrees")
+    rotation = rotation if rotation in (90, 180, 270) else 0
+    if rotation and not _already_rotated:
+        upright = [page.rotate(-rotation, expand=True) for page in pages]
+        try:
+            second = extract_from_pages(upright, api_key, _already_rotated=True)
+        except GeminiError:
+            second = None  # on garde la 1re lecture (moins fiable) plutôt que de tout perdre
+        if second is not None:
+            # Si la relecture signale encore une rotation (sens 90/270 mal estimé au 1er passage),
+            # on la cumule : l'aperçu affiché doit être à l'endroit même dans ce cas.
+            second.rotation = (rotation + second.rotation) % 360
+            return second
+
     result = ExtractionResult()
     result.driver_name = str(payload.get("driver_name") or "").strip().upper()
     result.matricule = str(payload.get("matricule") or "").strip()
@@ -301,14 +400,31 @@ def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResu
         result.date, edition_date, edition_time, prise_service_time
     )
 
+    result.rotation = rotation
+    result.notes = str(payload.get("notes_text") or "").strip()
+
     summary_raw = payload.get("summary") or {}
     missing_fields = []
-    for name, label in SUMMARY_FIELDS:
-        value = summary_raw.get(name)
-        if isinstance(value, (int, float)):
-            result.summary[name] = round(float(value), 2)
-        else:
-            missing_fields.append(label)
+    if str(payload.get("format") or "").strip().upper() == "B":
+        # Feuille de Route : pas de tableau récapitulatif, seulement TTE et Amplitude (HH:MM),
+        # converties ici en code plutôt que par Gemini (une conversion HH:MM -> centièmes d'heure
+        # faite par un modèle de langage n'est pas fiable). Les autres colonnes n'existent plus.
+        result.summary = {name: 0.0 for name, _label in SUMMARY_FIELDS}
+        for key, field_name, label in (
+            ("tte_hhmm", "tte", "TTE"), ("amplitude_hhmm", "ampli", "Amplitude"),
+        ):
+            hours = _hhmm_to_hours(str(payload.get(key) or ""))
+            if hours is None:
+                missing_fields.append(label)
+            else:
+                result.summary[field_name] = hours
+    else:
+        for name, label in SUMMARY_FIELDS:
+            value = summary_raw.get(name)
+            if isinstance(value, (int, float)):
+                result.summary[name] = round(float(value), 2)
+            else:
+                missing_fields.append(label)
 
     gemini_trajets = []
     for entry in payload.get("trajets") or []:
