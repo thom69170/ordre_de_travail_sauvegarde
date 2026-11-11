@@ -39,9 +39,10 @@ PROMPT = """Tu analyses un document de travail journalier d'un conducteur de bus
 existe DEUX formats, à reconnaître d'abord grâce au titre du document (renvoie-le dans "format") :
 - FORMAT B : titre "Feuille de Route" (format actuel) - voir la section "FORMAT B" plus bas.
 - FORMAT A : titre "ORDRE DE TRAVAIL" (ancien format) - voir la section "FORMAT A" ci-dessous.
-Le document a 1 ou plusieurs pages, et peut avoir été scanné à l'envers ou de travers : lis-le
-quand même normalement et indique dans "rotation_degrees" la rotation (sens horaire : 0, 90, 180
-ou 270) à appliquer à la page pour qu'elle soit à l'endroit (0 si elle l'est déjà).
+Le document a 1 ou plusieurs pages, et peut avoir été scanné tête en bas : lis-le quand même
+normalement et indique dans "rotation_degrees" la rotation à appliquer à la page pour qu'elle soit
+à l'endroit : 0 si elle l'est déjà, 180 si elle est tête en bas (le titre se trouve alors en bas
+de l'image et le texte est retourné).
 
 === FORMAT A : "ORDRE DE TRAVAIL" (ancien format) ===
 Sur la première page, un en-tête indique le nom du conducteur, son matricule (nombre) et la date
@@ -124,7 +125,7 @@ Pour le FORMAT B : "summary" = 0 partout (voir plus bas), et renvoie "tte_hhmm",
 
 Réponds uniquement avec les champs demandés par le schéma :
 - format : "A" ou "B"
-- rotation_degrees : 0, 90, 180 ou 270 (voir plus haut)
+- rotation_degrees : 0 ou 180 (voir plus haut)
 - date au format ISO AAAA-MM-JJ
 - tous les nombres en notation décimale avec un point (jamais de virgule)
 - "summary" DOIT contenir une valeur numérique pour CHACUNE des 16 colonnes, dans le même ordre
@@ -145,7 +146,13 @@ Réponds uniquement avec les champs demandés par le schéma :
   - "ligne" : le numéro de ligne (voir ci-dessus), en chiffres uniquement, sans les lettres qui
     suivent ; chaîne vide si tu ne le trouves vraiment pas
   - "trajet" : "LIEU A / LIEU B" (les deux noms de lieux dans l'ordre alphabétique, sans les
-    codes entre parenthèses ni la mention GIR/QUAI ni les heures)
+    codes entre parenthèses ni la mention GIR/QUAI ni les heures). Recopie chaque nom de lieu EN
+    ENTIER, tel qu'il est imprimé : "TARARE COLLÈGE ND DE BEL AIR / JOUX LE BARRAGE", jamais
+    réduit au seul nom de la commune ("TARARE / JOUX" est faux)
+  - "debut" : l'heure de début de CE trajet, recopiée de sa ligne (HH:MM, ex: "13:10"). Chaque
+    trajet a une heure de début différente : c'est ce qui permet de vérifier qu'aucune ligne
+    n'est comptée deux fois ni sautée. Avance ligne par ligne en suivant ces heures, qui se
+    suivent dans l'ordre croissant
 - "warnings" : liste courte de champs que tu n'es pas sûr d'avoir bien lus, y compris ceux du
   tableau récapitulatif où tu as dû deviner (vide seulement si tout est clair)
 
@@ -192,8 +199,9 @@ RESPONSE_SCHEMA = {
                 "properties": {
                     "ligne": {"type": "STRING"},
                     "trajet": {"type": "STRING"},
+                    "debut": {"type": "STRING"},
                 },
-                "required": ["ligne", "trajet"],
+                "required": ["ligne", "trajet", "debut"],
             },
         },
         "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -352,11 +360,8 @@ def test_api_key(api_key: str) -> tuple[bool, str]:
     return True, f"Clé valide (réponse : {text.strip()[:50]})"
 
 
-def extract_from_pages(
-    pages: list[Image.Image], api_key: str, _already_rotated: bool = False
-) -> ExtractionResult:
-    """Envoie les pages du document à Gemini et reconstruit un ExtractionResult."""
-    parts: list[dict] = [{"text": PROMPT}]
+def _page_parts(pages: list[Image.Image]) -> list[dict]:
+    parts: list[dict] = []
     for i, page in enumerate(pages, start=1):
         parts.append({"text": f"Page {i} (vue complète) :"})
         parts.append({
@@ -374,32 +379,81 @@ def extract_from_pages(
         parts.append({
             "inline_data": {"mime_type": "image/png", "data": _image_to_png_b64(bottom_half)}
         })
+    return parts
 
+
+def _roughness(values: bytes) -> float:
+    return sum(abs(a - b) for a, b in zip(values, values[1:])) / max(1, len(values) - 1)
+
+
+def _is_sideways(page: Image.Image) -> bool:
+    """Page couchée (texte vertical) ? Sur une page droite, la luminosité moyenne varie beaucoup
+    d'une ligne de pixels à la suivante (lignes de texte / interlignes, traits du tableau) et peu
+    d'une colonne à la suivante ; sur une page couchée c'est l'inverse. Calcul local et immédiat
+    (quelques ms, sans OCR). Mesuré sur 11 pages réelles x 2 orientations : rapport 0,22 à 0,69
+    pour les pages droites, 1,45 à 4,56 pour les pages couchées."""
+    gray = page.convert("L")
+    gray.thumbnail((500, 500))
+    width, height = gray.size
+    if width < 2 or height < 2:
+        return False
+    rows = gray.resize((1, height), Image.BOX).tobytes()
+    cols = gray.resize((width, 1), Image.BOX).tobytes()
+    return _roughness(cols) > _roughness(rows)
+
+
+def _read_once(pages: list[Image.Image], api_key: str) -> dict:
+    parts = [{"text": PROMPT}] + _page_parts(pages)
     raw = _call_gemini(api_key, parts, response_schema=RESPONSE_SCHEMA)
     try:
         text = raw["candidates"][0]["content"]["parts"][0]["text"]
-        payload = json.loads(text)
+        return json.loads(text)
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
         raise GeminiError(f"Réponse Gemini illisible : {exc}") from exc
 
-    # Document scanné à l'envers/de travers : Gemini le lit mal (testé : 3 trajets sur 4, dont un
-    # faux, contre 4 exacts une fois la page remise à l'endroit). Il indique la rotation à
-    # appliquer ; on remet les pages à l'endroit et on relit (une seconde analyse, seulement pour
-    # ces documents - les autres n'ont aucun coût en plus).
-    rotation = payload.get("rotation_degrees")
-    rotation = rotation if rotation in (90, 180, 270) else 0
-    if rotation and not _already_rotated:
-        upright = [page.rotate(-rotation, expand=True) for page in pages]
-        try:
-            second = extract_from_pages(upright, api_key, _already_rotated=True)
-        except GeminiError:
-            second = None  # on garde la 1re lecture (moins fiable) plutôt que de tout perdre
-        if second is not None:
-            # Si la relecture signale encore une rotation (sens 90/270 mal estimé au 1er passage),
-            # on la cumule : l'aperçu affiché doit être à l'endroit même dans ce cas.
-            second.rotation = (rotation + second.rotation) % 360
-            return second
 
+def _read_payload(pages: list[Image.Image], api_key: str) -> tuple[dict, list[int], bool]:
+    """Lit le document, en le remettant d'abord à l'endroit s'il est de travers. Retourne
+    (réponse JSON, rotation appliquée à chaque page, orientation_incertaine).
+
+    Un document scanné à l'envers ou photographié de côté est mal lu (testé : trajets faux,
+    heures de HLP prises pour des heures de course) alors qu'il est lu correctement une fois
+    droit. Deux étapes :
+    - page couchée : décidé localement (_is_sideways) - Gemini, lui, ne le signale pas de façon
+      fiable (0, 90 ou 270 d'un essai à l'autre sur la même photo). On la redresse d'un quart de
+      tour, sans savoir si elle se retrouve droite ou tête en bas ;
+    - page tête en bas : Gemini le signale de façon fiable (rotation 180) ; on la retourne et on
+      relit. Seuls ces documents coûtent une seconde lecture."""
+    rotations = [90 if _is_sideways(page) else 0 for page in pages]
+    pages = [page.rotate(-r, expand=True) if r else page for page, r in zip(pages, rotations)]
+
+    payload = _read_once(pages, api_key)
+    if payload.get("rotation_degrees") != 180:
+        return payload, rotations, False
+
+    flipped = [page.rotate(180) for page in pages]
+    rotations = [(r + 180) % 360 for r in rotations]
+    try:
+        second = _read_once(flipped, api_key)
+    except GeminiError:
+        return payload, rotations, True  # 1re lecture (moins fiable) plutôt que de tout perdre
+    return second, rotations, second.get("rotation_degrees") == 180
+
+
+def extract_from_pages(pages: list[Image.Image], api_key: str) -> ExtractionResult:
+    """Envoie les pages du document à Gemini et reconstruit un ExtractionResult."""
+    payload, rotations, orientation_uncertain = _read_payload(pages, api_key)
+    result = _payload_to_result(payload)
+    result.rotations = rotations
+    if orientation_uncertain:
+        result.warnings.insert(
+            0, "Document de travers : son orientation n'a pas pu être corrigée avec certitude, "
+               "vérifie bien tous les champs (ou reprends la photo à l'endroit)."
+        )
+    return result
+
+
+def _payload_to_result(payload: dict) -> ExtractionResult:
     result = ExtractionResult()
     result.driver_name = str(payload.get("driver_name") or "").strip().upper()
     result.matricule = str(payload.get("matricule") or "").strip()
@@ -412,7 +466,6 @@ def extract_from_pages(
         result.date, edition_date, edition_time, prise_service_time
     )
 
-    result.rotation = rotation
     result.notes = str(payload.get("notes_text") or "").strip()
 
     summary_raw = payload.get("summary") or {}
@@ -452,16 +505,30 @@ def extract_from_pages(
             else:
                 missing_fields.append(label)
 
+    # Chaque trajet est rattaché à son heure de début ("debut" dans le schéma). Mesuré sur un vrai
+    # OT de 2 pages très répétitif (25 trajets) : sans cette heure, Gemini en renvoyait 30 à 32 ;
+    # avec, exactement 25 à chaque essai - devoir recopier l'heure de chaque ligne l'oblige à les
+    # suivre une par une. (Lire page par page a aussi été essayé : 23 à 26 sans l'heure, et aucun
+    # gain avec, pour deux fois plus d'appels - d'où un seul appel pour tout le document.)
+    # En plus, un conducteur ne peut pas commencer deux trajets à la même heure : une heure déjà
+    # vue = la même ligne comptée deux fois, qu'on écarte.
     gemini_trajets = []
+    seen_starts: set[tuple[int, int]] = set()
     for entry in payload.get("trajets") or []:
         if isinstance(entry, dict):
             trajet_text = str(entry.get("trajet") or "").strip()
             ligne = re.sub(r"\D", "", str(entry.get("ligne") or ""))
+            start = _parse_hhmm(str(entry.get("debut") or ""))
         else:  # défense en profondeur si Gemini ignore le schéma et renvoie une simple chaîne
             trajet_text = str(entry).strip()
             ligne = ""
+            start = None
         if not trajet_text:
             continue
+        if start is not None:
+            if start in seen_starts:
+                continue
+            seen_starts.add(start)
         gemini_trajets.append(format_trajet(ligne, _normalize_trajet(trajet_text)))
     result.trajets = gemini_trajets
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]

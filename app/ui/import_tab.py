@@ -524,10 +524,13 @@ class ImportTab(ttk.Frame):
             return  # une extraction plus récente (page ajoutée entre-temps) a pris le relais
         self._set_processing(False)
         self._start_prefetch_if_idle()
-        if extraction is not None and extraction.rotation:
-            # Document scanné à l'envers : l'aperçu est remis à l'endroit pour pouvoir comparer
-            # avec les valeurs lues (le fichier original, lui, n'est pas modifié).
-            pages = [page.rotate(-extraction.rotation, expand=True) for page in pages]
+        if extraction is not None and any(extraction.rotations):
+            # Document scanné à l'envers ou photographié de côté : l'aperçu est remis à l'endroit
+            # pour pouvoir comparer avec les valeurs lues (le fichier original n'est pas modifié).
+            pages = [
+                page.rotate(-angle, expand=True) if angle else page
+                for page, angle in zip(pages, extraction.rotations)
+            ]
         self.current_pages = pages
         self._show_thumbnail(pages[0])
         self.open_file_btn.config(state="normal")

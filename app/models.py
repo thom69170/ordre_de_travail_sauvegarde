@@ -134,9 +134,10 @@ class ExtractionResult:
     extras: dict[str, float] = field(default_factory=dict)  # voir EXTRA_FIELDS
     trajets: list[str] = field(default_factory=list)
     last_minute_change: bool = False
-    # Rotation (sens horaire : 90/180/270) à appliquer aux pages pour les remettre à l'endroit
-    # (document scanné à l'envers), et texte libre lu sur le document (Feuille de Route).
-    rotation: int = 0
+    # Rotation (sens horaire : 0/90/180/270) à appliquer à chaque page pour la remettre à
+    # l'endroit (document scanné à l'envers ou photographié de côté) - vide si rien à tourner -,
+    # et texte libre lu sur le document (Feuille de Route).
+    rotations: list[int] = field(default_factory=list)
     notes: str = ""
     raw_text_page1: str = ""
     raw_text_summary_row: str = ""
