@@ -90,6 +90,14 @@ statistiques par semaine / mois / année.
      prise de service — vérifie toujours, et corrige à la main si besoin (sans Gemini, coche-la
      toi-même). Visible aussi dans **Historique** (colonne dédiée, ligne surlignée) et dans
      **Statistiques** (nombre de primes sur la période).
+   - **Indemnités de repas** : deux cases, **Repas midi dû** et **Repas soir dû**. Avec Gemini,
+     elles sont suggérées à partir des heures du document : un repas est dû si le service (de la
+     prise à la fin de service) couvre toute la plage 11h00-14h30 (midi) ou 18h30-22h00 (soir),
+     sauf coupure d'au moins 1 h au dépôt pendant cette plage. L'explication de la suggestion
+     s'affiche avec les avertissements ; quand la lecture des coupures n'est pas sûre, le repas
+     n'est pas coché mais signalé « à vérifier ». Les cases restent modifiables, aucun montant
+     n'est calculé, et le nombre de repas apparaît dans l'Historique, les Statistiques, l'export
+     et le contrôle de paie (comparé à « Repas unique » + « Indemnité spéciale »).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
    Le bouton **Exporter la liste (Excel)...** enregistre les jours affichés (selon le filtre
    année/mois) dans un fichier `.csv` qui s'ouvre directement dans Excel : une ligne par jour

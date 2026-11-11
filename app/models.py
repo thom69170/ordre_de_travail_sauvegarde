@@ -102,6 +102,11 @@ class WorkOrder:
     # configuré, sinon coché/décoché à la main (voir gemini_engine.extract_from_pages).
     last_minute_change: bool = False
 
+    # Indemnités de repas dues (midi / soir) : suggérées à l'import à partir des heures du service
+    # (voir app/meals.py), toujours modifiables. Aucun montant n'est stocké.
+    repas_midi: bool = False
+    repas_soir: bool = False
+
     trajets: list[str] = field(default_factory=list)
 
 
@@ -134,6 +139,8 @@ class ExtractionResult:
     extras: dict[str, float] = field(default_factory=dict)  # voir EXTRA_FIELDS
     trajets: list[str] = field(default_factory=list)
     last_minute_change: bool = False
+    repas_midi: bool = False
+    repas_soir: bool = False
     # Rotation (sens horaire : 0/90/180/270) à appliquer à chaque page pour la remettre à
     # l'endroit (document scanné à l'envers ou photographié de côté) - vide si rien à tourner -,
     # et texte libre lu sur le document (Feuille de Route).

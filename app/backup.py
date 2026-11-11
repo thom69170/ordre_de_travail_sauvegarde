@@ -141,10 +141,11 @@ def export_work_orders_csv(orders: list[WorkOrder], dest: Path) -> None:
     header = (
         ["Date", "Jour", "Conducteur", "Matricule"]
         + [label for _name, label in numeric_fields]
-        + ["Dernière minute", "Nb trajets", "Trajets", "Notes"]
+        + ["Dernière minute", "Repas midi", "Repas soir", "Nb trajets", "Trajets", "Notes"]
     )
     totals = {name: 0.0 for name, _label in numeric_fields}
     last_minute_total = 0
+    lunch_total = dinner_total = 0
     trajets_total = 0
 
     with open(dest, "w", newline="", encoding="utf-8-sig") as f:
@@ -166,15 +167,18 @@ def export_work_orders_csv(orders: list[WorkOrder], dest: Path) -> None:
                 totals[name] += value
                 row.append(_fr(value))
             row += [
-                "Oui" if wo.last_minute_change else "", len(wo.trajets), trajets_text,
+                "Oui" if wo.last_minute_change else "", "Oui" if wo.repas_midi else "",
+                "Oui" if wo.repas_soir else "", len(wo.trajets), trajets_text,
                 " ".join(wo.notes.split()),
             ]
             writer.writerow(row)
             last_minute_total += 1 if wo.last_minute_change else 0
+            lunch_total += int(wo.repas_midi)
+            dinner_total += int(wo.repas_soir)
             trajets_total += len(wo.trajets)
 
         writer.writerow(
             ["TOTAL", f"{len(orders)} jour(s)", "", ""]
             + [_fr(totals[name]) for name, _label in numeric_fields]
-            + [last_minute_total, trajets_total, "", ""]
+            + [last_minute_total, lunch_total, dinner_total, trajets_total, "", ""]
         )

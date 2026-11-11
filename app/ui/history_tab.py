@@ -42,17 +42,19 @@ class HistoryTab(ttk.Frame):
 
         ttk.Button(top, text="Actualiser", command=self.refresh).pack(side="left", padx=12)
 
-        columns = ("date", "conducteur", "tps", "tte", "ampli", "km", "derniere_minute", "trajets")
+        columns = (
+            "date", "conducteur", "tps", "tte", "ampli", "km", "derniere_minute", "repas", "trajets",
+        )
         self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
         headings = {
             "date": "Date", "conducteur": "Conducteur", "tps": "TPS",
             "tte": "TTE (travail)", "ampli": "Amplitude", "km": "Km",
-            "derniere_minute": "Dernière minute",
+            "derniere_minute": "Dernière minute", "repas": "Repas",
             "trajets": "Trajets",
         }
         widths = {
             "date": 110, "conducteur": 200, "tps": 90, "tte": 110, "ampli": 100, "km": 70,
-            "derniere_minute": 110, "trajets": 300,
+            "derniere_minute": 110, "repas": 90, "trajets": 300,
         }
         for col in columns:
             self.tree.heading(col, text=headings[col])
@@ -111,6 +113,9 @@ class HistoryTab(ttk.Frame):
                 display_date, wo.driver_name, hours_to_hm(wo.tps), hours_to_hm(wo.tte),
                 hours_to_hm(wo.ampli), f"{wo.km_totaux:.0f}" if wo.km_totaux else "",
                 "Oui" if wo.last_minute_change else "",
+                " + ".join(
+                    name for name, due in (("midi", wo.repas_midi), ("soir", wo.repas_soir)) if due
+                ),
                 ", ".join(sorted(set(wo.trajets))),
             ), tags=("last_minute",) if wo.last_minute_change else ())
             total_tte += wo.tte
@@ -119,6 +124,9 @@ class HistoryTab(ttk.Frame):
         summary_text = f"{len(orders)} jour(s) · total temps de travail : {hours_to_hm(total_tte)}"
         if last_minute_count:
             summary_text += f" · {last_minute_count} changement(s) de dernière minute"
+        meal_count = sum(int(wo.repas_midi) + int(wo.repas_soir) for wo in orders)
+        if meal_count:
+            summary_text += f" · {meal_count} repas"
         self.summary_label.config(text=summary_text)
 
     def export_csv(self):

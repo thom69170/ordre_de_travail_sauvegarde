@@ -132,6 +132,34 @@ def check_payslip(payslip: Payslip) -> PayrollCheck:
                 "de dernière minute : à réclamer si tes OT sont exacts."
             )
 
+    # Repas : la feuille de prépaie les compte sur deux lignes ("Repas unique" et "Indemnité
+    # spéciale") ; l'app ne distingue pas les deux et compare le total.
+    meal_values = [
+        v for v in (
+            find_recap_value(recap, r"^repas unique"),
+            find_recap_value(recap, r"^indemnite speciale"),
+        ) if v is not None
+    ]
+    meals_line = _finish(
+        CheckLine("Indemnités de repas (repas unique + indemnité spéciale)",
+                  sum(meal_values) if meal_values else None,
+                  float(sum(int(o.repas_midi) + int(o.repas_soir) for o in orders)), ""),
+        0,
+        "Moins de repas payés que de repas dus d'après tes OT : à réclamer si tes OT sont exacts.",
+        "Plus de repas payés que de repas relevés sur tes OT (cases « Repas » non cochées ?).",
+    )
+    if meals_line.status == "absent":
+        if meals_line.ot_value == 0:
+            meals_line.status = "ok"
+            meals_line.comment = "Aucun repas sur la feuille, aucun relevé sur tes OT."
+        else:
+            meals_line.status = "moins"
+            meals_line.comment = (
+                "Aucun repas sur la feuille de prépaie alors que tes OT en relèvent : à réclamer "
+                "si tes OT sont exacts."
+            )
+    check.lines.append(meals_line)
+
     if days.payslip_value is not None and len(orders) < days.payslip_value:
         missing = int(days.payslip_value - len(orders))
         check.notes.append(

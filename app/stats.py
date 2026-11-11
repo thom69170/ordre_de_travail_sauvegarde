@@ -81,6 +81,7 @@ class PeriodSummary:
     ampli: float = 0.0
     tad: float = 0.0
     last_minute_count: int = 0
+    meal_count: int = 0
     km_productifs: float = 0.0
     km_hlp: float = 0.0
     km_totaux: float = 0.0
@@ -98,6 +99,7 @@ def summary_for_period(start_date: str | None = None, end_date: str | None = Non
         summary.tad += wo.tad
         if wo.last_minute_change:
             summary.last_minute_count += 1
+        summary.meal_count += int(wo.repas_midi) + int(wo.repas_soir)
         summary.km_productifs += wo.km_productifs
         summary.km_hlp += wo.km_hlp
         summary.km_totaux += wo.km_totaux

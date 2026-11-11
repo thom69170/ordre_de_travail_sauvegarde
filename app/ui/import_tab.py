@@ -189,6 +189,14 @@ class ImportTab(ttk.Frame):
             header_row2, text="Changement de dernière minute (prime)", variable=self.last_minute_var,
         )
         self.last_minute_check.pack(side="left")
+        self.repas_midi_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            header_row2, text="Repas midi dû", variable=self.repas_midi_var
+        ).pack(side="left", padx=(20, 0))
+        self.repas_soir_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            header_row2, text="Repas soir dû", variable=self.repas_soir_var
+        ).pack(side="left", padx=(12, 0))
 
         summary_frame = ttk.LabelFrame(form, text="Récapitulatif (centièmes d'heure)", padding=10)
         summary_frame.pack(fill="x", padx=4, pady=6)
@@ -542,6 +550,8 @@ class ImportTab(ttk.Frame):
             return
 
         self.last_minute_var.set(bool(extraction.last_minute_change))
+        self.repas_midi_var.set(bool(extraction.repas_midi))
+        self.repas_soir_var.set(bool(extraction.repas_soir))
         if extraction.notes and not self.notes_text.get("1.0", "end").strip():
             self.notes_text.insert("1.0", extraction.notes)
 
@@ -667,6 +677,8 @@ class ImportTab(ttk.Frame):
         self.name_entry.set(work_order.driver_name)
         self.matricule_entry.set(work_order.matricule)
         self.last_minute_var.set(bool(work_order.last_minute_change))
+        self.repas_midi_var.set(bool(work_order.repas_midi))
+        self.repas_soir_var.set(bool(work_order.repas_soir))
         for field_name, _label in SUMMARY_FIELDS + EXTRA_FIELDS:
             self.summary_entries[field_name].set_decimal(getattr(work_order, field_name))
         self.trajet_listbox.delete(0, "end")
@@ -703,6 +715,8 @@ class ImportTab(ttk.Frame):
         self.name_entry.set("")
         self.matricule_entry.set("")
         self.last_minute_var.set(False)
+        self.repas_midi_var.set(False)
+        self.repas_soir_var.set(False)
         for entry in self.summary_entries.values():
             entry.set_decimal(0.0)
         self.trajet_listbox.delete(0, "end")
@@ -743,6 +757,8 @@ class ImportTab(ttk.Frame):
             notes=self.notes_text.get("1.0", "end").strip(),
             trajets=list(self.trajet_listbox.get(0, "end")),
             last_minute_change=self.last_minute_var.get(),
+            repas_midi=self.repas_midi_var.get(),
+            repas_soir=self.repas_soir_var.get(),
         )
         for field_name, _label in SUMMARY_FIELDS + EXTRA_FIELDS:
             setattr(wo, field_name, self.summary_entries[field_name].get_decimal())

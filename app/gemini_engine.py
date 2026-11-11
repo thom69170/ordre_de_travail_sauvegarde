@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 
 from PIL import Image
 
+from app import meals
+
 from app.models import (
     EXTRA_FIELD_NAMES, ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES, format_trajet,
 )
@@ -158,14 +160,41 @@ Réponds uniquement avec les champs demandés par le schéma :
 
 FORMAT A : en haut de la première page figure une ligne "Edition du JJ/MM/AAAA à HH:MM" (parfois
 répétée plusieurs fois à cause de la mise en page du document) : c'est la date et l'heure
-d'impression/modification de cet ordre de travail. Dans le tableau des services, la toute
-première ligne est toujours celle de "PRISE DE SERVICE" ; la première heure de sa colonne
-"HEURE Début Fin" (ex: "06h45" dans "06h45 07h00") est l'heure de prise de service.
+d'impression/modification de cet ordre de travail. Dans le tableau des services, repère la
+ligne "PSR" / "PRISE DE SERVICE" (en général la première ; une ligne "RVPERS" / "RV PERSONNEL" peut
+la précéder et n'est PAS la prise de service) ; la première heure de sa colonne "HEURE Début Fin"
+(ex: "06h45" dans "06h45 07h00") est l'heure de prise de service.
 FORMAT B : l'édition est le petit texte "le JJ/MM/AAAA à HH:MM" près du titre, et la prise de
 service est l'heure "PS :" du cadre en haut (ex: "11:39").
 Renvoie ces informations dans "edition_date" (AAAA-MM-JJ), "edition_time" (HH:MM) et
 "prise_service_time" (HH:MM). Laisse-les vides si tu ne les trouves vraiment pas, plutôt que de
 deviner.
+
+Renvoie aussi "fin_service_time" (HH:MM), l'heure à laquelle le service se termine :
+FORMAT A : la DERNIÈRE heure de la dernière ligne du tableau, "FIN DE SERVICE" / "FSR" (ex:
+"19h27" dans "19h12 19h27"). FORMAT B : l'heure "FS :" du cadre en haut (ex: "21:19").
+
+Enfin, liste dans "pauses" chaque COUPURE LONGUE de la journée : un intervalle de 30 minutes ou
+plus pendant lequel rien n'est prévu pour le conducteur. Pour les trouver, parcours les lignes du
+tableau dans l'ordre et compare l'heure de FIN de chaque ligne à l'heure de DÉBUT de la ligne
+suivante :
+- dès que la ligne suivante commence 30 minutes ou plus après la fin de la ligne courante, c'est
+  une coupure, QU'UNE LIGNE "Coupure" SOIT IMPRIMÉE ENTRE LES DEUX OU NON (ancien format : parfois
+  une ligne "Coupure" avec seulement une durée en minutes, ex "322", parfois rien du tout).
+  Exemple : "ENTR RNA 08h43 09h13" puis "HLP 17h14 17h35" -> coupure de 09:13 à 17:14 ;
+- FORMAT B : une ligne "Coupure ..." (grisée) porte ses propres heures de début et de fin :
+  utilise-les telles quelles.
+Les courses, HLP, montées, entretiens ("ENTR"/"ENTRE"), battements courts et la prise/fin de
+service ne sont pas des coupures. Pour chaque coupure :
+- "debut" et "fin" (HH:MM) comme expliqué ci-dessus ;
+- "ligne_avant" : le texte de la ligne située JUSTE AVANT la coupure (colonne "DEFINITION DU
+  SERVICE" en FORMAT A), recopié EN ENTIER tel qu'imprimé, ex: "HLP : TARARE COLLÈGE ND DE BEL AIR
+  (RTREC) -> SARCEY - DEPOT (RSYDEP)" ou "ENTRETIEN RNA" ;
+- "ligne_apres" : de même, le texte de la ligne située JUSTE APRÈS la coupure, recopié en entier,
+  ex: "HLP : SARCEY - DEPOT (RSYDEP) -> TARARE GARE (RTRGR)" ou "ENTRETIEN AP" ;
+- "lieu" : FORMAT B uniquement : le lieu imprimé sur la ligne de coupure elle-même (ex: "SARCEY -
+  DEPOT") ; chaîne vide en FORMAT A.
+Ne liste pas les intervalles de moins de 30 minutes. Liste vide s'il n'y en a aucun.
 """
 
 RESPONSE_SCHEMA = {
@@ -187,6 +216,21 @@ RESPONSE_SCHEMA = {
         "km_hlp": {"type": "NUMBER"},
         "km_totaux": {"type": "NUMBER"},
         "notes_text": {"type": "STRING"},
+        "fin_service_time": {"type": "STRING"},
+        "pauses": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "debut": {"type": "STRING"},
+                    "fin": {"type": "STRING"},
+                    "lieu": {"type": "STRING"},
+                    "ligne_avant": {"type": "STRING"},
+                    "ligne_apres": {"type": "STRING"},
+                },
+                "required": ["debut", "fin", "lieu", "ligne_avant", "ligne_apres"],
+            },
+        },
         "summary": {
             "type": "OBJECT",
             "properties": {name: {"type": "NUMBER"} for name in SUMMARY_FIELD_NAMES},
@@ -212,8 +256,8 @@ RESPONSE_SCHEMA = {
     "required": [
         "driver_name", "matricule", "date", "format", "rotation_degrees", "edition_date",
         "edition_time", "prise_service_time", "tte_hhmm", "amplitude_hhmm", "indem_coup_hhmm",
-        "indem_ampl_hhmm", "km_productifs", "km_hlp", "km_totaux", "notes_text", "summary",
-        "trajets",
+        "indem_ampl_hhmm", "km_productifs", "km_hlp", "km_totaux", "notes_text",
+        "fin_service_time", "pauses", "summary", "trajets",
     ],
 }
 
@@ -541,6 +585,34 @@ def _payload_to_result(payload: dict) -> ExtractionResult:
         gemini_trajets.append(format_trajet(ligne, _normalize_trajet(trajet_text)))
     result.trajets = gemini_trajets
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
+
+    # Indemnités de repas : calculées ici (règles dans app/meals.py) à partir des heures lues,
+    # jamais demandées à Gemini - un calcul d'horaires fait par un modèle n'est pas fiable.
+    pauses = []
+    for entry in payload.get("pauses") or []:
+        if not isinstance(entry, dict):
+            continue
+        start = meals.parse_minutes(str(entry.get("debut") or ""))
+        end = meals.parse_minutes(str(entry.get("fin") or ""))
+        if start is None or end is None:
+            continue
+        if end < start:
+            end += 24 * 60
+        pauses.append(meals.Pause(
+            start, end, str(entry.get("lieu") or ""),
+            str(entry.get("ligne_avant") or ""), str(entry.get("ligne_apres") or ""),
+        ))
+    # Garde-fou : amplitude - TTE = durée totale des coupures de la journée (vérifié sur les
+    # documents réels des deux formats). Si les coupures situées par Gemini n'en expliquent pas
+    # l'essentiel, il en a manqué une : on ne suggère alors pas de repas à sa place.
+    ampli, tte = result.summary.get("ampli", 0.0), result.summary.get("tte", 0.0)
+    expected_break = (ampli - tte) * 60 if ampli and tte else None
+    suggestion = meals.suggest_meals(
+        prise_service_time, str(payload.get("fin_service_time") or ""), pauses,
+        expected_break_minutes=expected_break,
+    )
+    result.repas_midi, result.repas_soir = suggestion.lunch, suggestion.dinner
+    result.warnings.append(suggestion.explanation)
     if km_warning:
         result.warnings.append(km_warning)
     if missing_fields:

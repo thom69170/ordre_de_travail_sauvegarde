@@ -127,6 +127,8 @@ class StatsTab(ttk.Frame):
             text = f"{period_sum.days} jour(s)"
             if period_sum.last_minute_count:
                 text += f" · {period_sum.last_minute_count} prime(s) dernière minute"
+            if period_sum.meal_count:
+                text += f" · {period_sum.meal_count} repas"
             return text
 
         def _extra_text(period_sum) -> str:

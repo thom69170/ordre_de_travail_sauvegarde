@@ -424,7 +424,7 @@ class PayslipTab(ttk.Frame):
                 frame, columns=columns, show="headings", height=len(check.lines), selectmode="none"
             )
             for col, text, width in (
-                ("label", "Élément", 330), ("payslip", "Feuille de prépaie", 130),
+                ("label", "Élément", 400), ("payslip", "Feuille de prépaie", 130),
                 ("ot", "Mes OT", 110), ("diff", "Écart", 100), ("comment", "Résultat", 110),
             ):
                 tree.heading(col, text=text)
@@ -450,14 +450,14 @@ class PayslipTab(ttk.Frame):
             for line in check.lines:
                 if line.comment:
                     ttk.Label(
-                        frame, text=f"• {line.label} : {line.comment}", wraplength=780,
+                        frame, text=f"• {line.label} : {line.comment}", wraplength=850,
                         justify="left",
                     ).pack(anchor="w", pady=(8, 0))
 
         for note in check.notes:
             tk.Label(
                 frame, text=f"⚠ {note}", bg=WARN_BG, fg=WARN_FG, anchor="w", justify="left",
-                wraplength=760, padx=10, pady=8,
+                wraplength=830, padx=10, pady=8,
             ).pack(fill="x", pady=(12, 0))
 
         ttk.Button(frame, text="Fermer", command=dialog.destroy).pack(anchor="e", pady=(16, 0))
