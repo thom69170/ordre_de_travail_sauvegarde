@@ -108,7 +108,11 @@ statistiques par semaine / mois / année.
    en enchaînant plusieurs feuilles de prépaie à la suite avec le même QR code si besoin.
    En plus des heures sup, la lecture récupère aussi tous les autres compteurs du document
    (jours travaillés, TTE, repos différés, RC nuit, cumuls annuels...) — accessibles via le
-   bouton **Voir tous les détails...**.
+   bouton **Voir tous les détails...**. Le bouton **Contrôler avec mes OT...** compare la feuille
+   de prépaie sélectionnée aux ordres de travail enregistrés sur la même période : jours
+   travaillés, TTE et nombre de primes de modification de service (dernière minute), avec les
+   écarts signalés. Aucun montant n'est calculé, et la comparaison n'a de sens que si tous les
+   jours du mois ont été importés (l'app le rappelle quand il en manque).
 6. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
    l'onglet, avec le lien pour générer une clé gratuite. Avec une clé, la lecture passe

@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 from app import db, storage
 from app.models import Payslip
 from app.payslip_parser import extract_payslip
-from app.ui.common import ACCENT, LabeledEntry, TEXT_MUTED, format_decimal
+from app.ui.common import ACCENT, LabeledEntry, TEXT_MUTED, WARN_BG, WARN_FG, format_decimal
 
 FILE_TYPES = [
     ("PDF", "*.pdf"),
@@ -143,6 +143,9 @@ class PayslipTab(ttk.Frame):
             bottom, text="Ouvrir le fichier source", command=self.open_selected_file
         ).pack(side="left", padx=8)
         ttk.Button(bottom, text="Supprimer", command=self.delete_selected).pack(side="left")
+        ttk.Button(
+            bottom, text="Contrôler avec mes OT...", command=self.check_selected
+        ).pack(side="left", padx=8)
 
         self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
@@ -378,6 +381,87 @@ class PayslipTab(ttk.Frame):
         self.reset_form()
         self.refresh()
         self._maybe_start_next_from_queue()
+
+    def check_selected(self):
+        """Compare la feuille de prépaie sélectionnée aux OT enregistrés sur la même période."""
+        payslip_id = self._selected_id()
+        if payslip_id is None:
+            messagebox.showinfo("Sélection", "Sélectionne d'abord un relevé dans la liste.")
+            return
+        p = db.get_payslip(payslip_id)
+        if p is None:
+            return
+        from app.payroll_check import check_payslip
+
+        check = check_payslip(p)
+
+        dialog = tk.Toplevel(self)
+        dialog.title(
+            f"Contrôle de paie : {_fmt_date(check.period_start)} — {_fmt_date(check.period_end)}"
+        )
+        dialog.transient(self.winfo_toplevel())
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text=f"{check.ot_count} ordre(s) de travail enregistré(s) sur cette période, comparé(s) "
+                 "aux totaux de la feuille de prépaie. L'app ne calcule aucun montant : elle "
+                 "signale seulement les écarts de compteurs, à vérifier avec ton employeur.",
+            wraplength=760, justify="left",
+        ).pack(anchor="w")
+
+        def fmt(value, unit):
+            if value is None:
+                return "—"
+            if unit == "h":
+                return f"{format_decimal(value)} h"
+            return f"{value:g}{' j' if unit == 'j' else ''}"
+
+        if check.lines:
+            columns = ("label", "payslip", "ot", "diff", "comment")
+            tree = ttk.Treeview(
+                frame, columns=columns, show="headings", height=len(check.lines), selectmode="none"
+            )
+            for col, text, width in (
+                ("label", "Élément", 330), ("payslip", "Feuille de prépaie", 130),
+                ("ot", "Mes OT", 110), ("diff", "Écart", 100), ("comment", "Résultat", 110),
+            ):
+                tree.heading(col, text=text)
+                tree.column(col, width=width, anchor="w")
+            tree.tag_configure("ecart", background=WARN_BG)
+            for line in check.lines:
+                diff = line.diff
+                if diff is None:
+                    diff_text = "—"
+                elif not diff:
+                    diff_text = "0"
+                elif line.unit == "h":
+                    diff_text = f"{diff:+.2f}".replace(".", ",") + " h"
+                else:
+                    diff_text = f"{diff:+g}"
+                tree.insert("", "end", values=(
+                    line.label, fmt(line.payslip_value, line.unit), fmt(line.ot_value, line.unit),
+                    diff_text, "✓ identique" if line.status == "ok" else "⚠ écart",
+                ), tags=() if line.status == "ok" else ("ecart",))
+            tree.pack(fill="x", pady=(12, 0))
+            # Les explications sont sous le tableau : une cellule de tableau ne revient pas à la
+            # ligne et coupait les phrases.
+            for line in check.lines:
+                if line.comment:
+                    ttk.Label(
+                        frame, text=f"• {line.label} : {line.comment}", wraplength=780,
+                        justify="left",
+                    ).pack(anchor="w", pady=(8, 0))
+
+        for note in check.notes:
+            tk.Label(
+                frame, text=f"⚠ {note}", bg=WARN_BG, fg=WARN_FG, anchor="w", justify="left",
+                wraplength=760, padx=10, pady=8,
+            ).pack(fill="x", pady=(12, 0))
+
+        ttk.Button(frame, text="Fermer", command=dialog.destroy).pack(anchor="e", pady=(16, 0))
+        self._check_dialog = dialog
 
     def _show_details_dialog(self):
         if not self.current_details_json:
