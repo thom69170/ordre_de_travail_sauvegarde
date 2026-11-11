@@ -6,7 +6,9 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from app.models import EXTRA_FIELD_NAMES, SUMMARY_FIELD_NAMES, Payslip, WorkOrder, split_trajet
+from app.models import (
+    EXTRA_FIELD_NAMES, SUMMARY_FIELD_NAMES, Bulletin, Payslip, WorkOrder, split_trajet,
+)
 from app.paths import db_path
 
 BOOL_FIELD_NAMES = ["last_minute_change", "repas_midi", "repas_soir"]
@@ -77,6 +79,22 @@ CREATE TABLE IF NOT EXISTS payslips (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payslips_period ON payslips(period_start);
+
+CREATE TABLE IF NOT EXISTS bulletins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    payment_date TEXT DEFAULT '',
+    net_paye REAL DEFAULT 0,
+    brut REAL DEFAULT 0,
+    net_fiscal REAL DEFAULT 0,
+    heures REAL DEFAULT 0,
+    source_filename TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    details_json TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_bulletins_period ON bulletins(period_start);
 """
 
 
@@ -310,3 +328,57 @@ def list_payslips() -> list[Payslip]:
     with connect() as conn:
         rows = conn.execute("SELECT * FROM payslips ORDER BY period_start DESC").fetchall()
     return [_row_to_payslip(r) for r in rows]
+
+
+_BULLETIN_COLS = ["period_start", "period_end", "payment_date", "net_paye", "brut", "net_fiscal",
+                  "heures", "source_filename", "details_json"]
+
+
+def _row_to_bulletin(row: sqlite3.Row) -> Bulletin:
+    return Bulletin(**{k: row[k] for k in row.keys()})
+
+
+def insert_bulletin(b: Bulletin) -> int:
+    with connect() as conn:
+        cols = _BULLETIN_COLS + ["created_at"]
+        values = [getattr(b, c) for c in _BULLETIN_COLS]
+        values.append(b.created_at or datetime.now(timezone.utc).isoformat())
+        placeholders = ", ".join(["?"] * len(cols))
+        cur = conn.execute(
+            f"INSERT INTO bulletins ({', '.join(cols)}) VALUES ({placeholders})", values
+        )
+        return cur.lastrowid
+
+
+def update_bulletin(b: Bulletin) -> None:
+    if b.id is None:
+        raise ValueError("bulletin without id cannot be updated")
+    with connect() as conn:
+        assignments = ", ".join(f"{c} = ?" for c in _BULLETIN_COLS)
+        values = [getattr(b, c) for c in _BULLETIN_COLS] + [b.id]
+        conn.execute(f"UPDATE bulletins SET {assignments} WHERE id = ?", values)
+
+
+def delete_bulletin(bulletin_id: int) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM bulletins WHERE id = ?", (bulletin_id,))
+
+
+def get_bulletin(bulletin_id: int) -> Bulletin | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM bulletins WHERE id = ?", (bulletin_id,)).fetchone()
+    return _row_to_bulletin(row) if row is not None else None
+
+
+def get_bulletin_by_period(period_start: str) -> Bulletin | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM bulletins WHERE period_start = ?", (period_start,)
+        ).fetchone()
+    return _row_to_bulletin(row) if row is not None else None
+
+
+def list_bulletins() -> list[Bulletin]:
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM bulletins ORDER BY period_start DESC").fetchall()
+    return [_row_to_bulletin(r) for r in rows]

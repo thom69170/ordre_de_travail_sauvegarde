@@ -1,9 +1,11 @@
-"""Fenêtre principale : assemble les onglets Importer / Historique / Statistiques / Paramètres."""
+"""Fenêtre principale : assemble les onglets Importer / Historique / Statistiques / Heures sup. /
+Bulletins de paie / Paramètres."""
 from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
 
+from app.ui.bulletin_tab import BulletinTab
 from app.ui.history_tab import HistoryTab
 from app.ui.import_tab import ImportTab
 from app.ui.payslip_tab import PayslipTab
@@ -26,17 +28,20 @@ class MainWindow(ttk.Frame):
         self.history_tab = HistoryTab(self.notebook, self)
         self.stats_tab = StatsTab(self.notebook, self)
         self.payslip_tab = PayslipTab(self.notebook, self)
+        self.bulletin_tab = BulletinTab(self.notebook, self)
         self.settings_tab = SettingsTab(self.notebook, self)
 
         self.notebook.add(self.import_tab, text="Importer")
         self.notebook.add(self.history_tab, text="Historique")
         self.notebook.add(self.stats_tab, text="Statistiques")
         self.notebook.add(self.payslip_tab, text="Heures sup.")
+        self.notebook.add(self.bulletin_tab, text="Bulletins de paie")
         self.notebook.add(self.settings_tab, text="Paramètres")
 
         self._tab_ids = {
             "import": self.import_tab, "history": self.history_tab,
-            "stats": self.stats_tab, "payslip": self.payslip_tab, "settings": self.settings_tab,
+            "stats": self.stats_tab, "payslip": self.payslip_tab,
+            "bulletin": self.bulletin_tab, "settings": self.settings_tab,
         }
 
     def select_tab(self, name: str):
@@ -55,6 +60,7 @@ class MainWindow(ttk.Frame):
         self.stats_tab.refresh()
         self.payslip_tab.reset_form()
         self.payslip_tab.refresh()
+        self.bulletin_tab.refresh()
 
     def refresh_other_tabs(self, source: str):
         if source != "history":

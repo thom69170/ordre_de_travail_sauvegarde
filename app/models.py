@@ -130,6 +130,25 @@ class Payslip:
 
 
 @dataclass
+class Bulletin:
+    """Bulletin de paie importé (voir app/bulletin_parser.py) : les chiffres sont ceux imprimés sur
+    le document, jamais recalculés."""
+    id: int | None = None
+    period_start: str = ""  # ISO YYYY-MM-DD
+    period_end: str = ""
+    payment_date: str = ""  # ISO, "" si non lue
+    net_paye: float = 0.0
+    brut: float = 0.0
+    net_fiscal: float = 0.0
+    heures: float = 0.0
+    source_filename: str = ""
+    created_at: str = ""
+    # JSON : {"lines": [{section, label, quantity, rate, amount, employer}], "cumuls": {...},
+    # "absences": [...], "payment_mode": "..."}
+    details_json: str = ""
+
+
+@dataclass
 class ExtractionResult:
     """Résultat brut (et donc potentiellement imparfait) de l'OCR, avant validation utilisateur."""
     driver_name: str = ""

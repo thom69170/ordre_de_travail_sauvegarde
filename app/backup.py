@@ -15,13 +15,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 from app.models import EXTRA_FIELDS, SUMMARY_FIELDS, WorkOrder
-from app.paths import data_dir, db_path, imports_dir, payslips_dir
+from app.paths import bulletins_dir, data_dir, db_path, imports_dir, payslips_dir
 
 DB_NAME = "ordres.db"
 # Dossiers sauvegardés en plus de la base. Volontairement PAS config.json (clé API Gemini,
 # personnelle - à ne pas retrouver dans un fichier qu'on peut être amené à partager), ni les
 # dossiers techniques (runtime, photos temporaires reçues du téléphone).
-BACKUP_FOLDERS = {"imports": imports_dir, "payslips": payslips_dir}
+BACKUP_FOLDERS = {"imports": imports_dir, "payslips": payslips_dir, "bulletins": bulletins_dir}
 
 FRENCH_DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 

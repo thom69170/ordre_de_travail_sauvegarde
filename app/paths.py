@@ -57,6 +57,13 @@ def payslips_dir() -> Path:
     return d
 
 
+def bulletins_dir() -> Path:
+    """Dossier des bulletins de paie importés (voir app/bulletin_parser.py)."""
+    d = data_dir() / "bulletins"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def db_path() -> Path:
     return data_dir() / "ordres.db"
 

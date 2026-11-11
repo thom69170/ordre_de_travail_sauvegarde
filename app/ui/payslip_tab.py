@@ -206,7 +206,16 @@ class PayslipTab(ttk.Frame):
         self.reset_form()
         self._maybe_start_next_from_queue()
 
-    def _load_file(self, path: Path):
+    def _load_file(self, path: Path, _routed: bool = False):
+        # Un bulletin de paie choisi ici par erreur est envoyé vers son onglet plutôt que refusé.
+        if not _routed:
+            from app.bulletin_parser import is_bulletin
+
+            if is_bulletin(path):
+                self.app.select_tab("bulletin")
+                self.app.bulletin_tab.import_files([path])
+                self._maybe_start_next_from_queue()
+                return
         try:
             result = extract_payslip(path)
         except Exception as exc:  # noqa: BLE001

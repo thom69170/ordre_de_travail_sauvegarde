@@ -105,8 +105,9 @@ statistiques par semaine / mois / année.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
 5. Onglet **Heures sup.** : suivi des heures supplémentaires (25 %/50 %) relevées sur tes
-   **feuilles de prépaie** (le rapport d'activité RNA - pas le bulletin de paie officiel, dont la
-   mise en page n'est pas reconnue par la lecture automatique). **L'app ne calcule jamais
+   **feuilles de prépaie** (le rapport d'activité RNA ; le bulletin de paie officiel, lui, va
+   dans l'onglet **Bulletins de paie** - un fichier choisi dans le mauvais onglet est renvoyé
+   automatiquement vers le bon). **L'app ne calcule jamais
    elle-même tes heures sup** (le mode de calcul exact - modulation du temps de travail - n'est
    pas garanti fiable à deviner) : elle se contente de relire les chiffres déjà présents sur le
    document (import direct du PDF, lecture automatique du texte - pas besoin d'OCR/Gemini, ça
@@ -121,7 +122,18 @@ statistiques par semaine / mois / année.
    travaillés, TTE et nombre de primes de modification de service (dernière minute), avec les
    écarts signalés. Aucun montant n'est calculé, et la comparaison n'a de sens que si tous les
    jours du mois ont été importés (l'app le rappelle quand il en manque).
-6. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
+6. Onglet **Bulletins de paie** : importe tes bulletins de paie (PDF, un ou plusieurs à la
+   fois, depuis le PC ou le téléphone). La lecture est locale (texte du PDF, ni OCR ni IA) et
+   les chiffres sont recopiés tels quels, jamais recalculés : net payé et date de paiement,
+   salaire brut, net fiscal, heures déclarées, et le détail complet ligne par ligne (bouton
+   **Voir le détail...**). Deux recoupements signalent une lecture douteuse : la somme des
+   éléments de brut doit donner le salaire brut, et le net à payer du tableau doit égaler le
+   montant payé indiqué en bas. Le bouton **Comparer à la feuille de prépaie...** rapproche les
+   éléments variables payés sur le bulletin (heures indemnisées, prime de modification de
+   service, prime urbain, repas unique, indemnité spéciale) de ceux annoncés par la feuille de
+   prépaie du **mois précédent** (le bulletin d'août paie les éléments de juillet). Les heures
+   supplémentaires ne sont pas encore comparées. Les bulletins sont inclus dans la sauvegarde.
+7. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
    l'onglet, avec le lien pour générer une clé gratuite. Avec une clé, la lecture passe
    **uniquement par Gemini** (l'OCR local n'est même pas lancé : plus rapide, surtout sur un PC

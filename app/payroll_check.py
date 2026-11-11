@@ -13,7 +13,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from app import db
-from app.models import Payslip
+from app.models import Bulletin, Payslip
 
 # Écart toléré sur les heures (arrondis des centièmes d'heure, jour après jour).
 HOURS_TOLERANCE = 0.10
@@ -169,4 +169,82 @@ def check_payslip(payslip: Payslip) -> PayrollCheck:
         )
     elif not orders:
         check.notes.append("Aucun ordre de travail enregistré sur cette période.")
+    return check
+
+
+# (libellé affiché, motif des lignes du bulletin, motif de la ligne de la feuille de prépaie, unité)
+# Motifs appliqués aux libellés sans accents ni majuscules.
+_BULLETIN_PAIRS = (
+    ("Heures indemnisées", r"\bh indemnitaire", r"^heures indemnisees", "h"),
+    ("Prime modification de service", r"prime modification", r"prime modification", ""),
+    ("Prime urbain (+5 trajets)", r"prime urbain", r"prime urbain", ""),
+    ("Repas unique", r"indemnite repas unique", r"^repas unique", ""),
+    ("Indemnité spéciale", r"indem\S* (ns )?speciale", r"^indemnite speciale", ""),
+)
+
+
+def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
+    """Rapproche les éléments variables payés sur un bulletin de paie (lignes "RAP ...") de ceux
+    annoncés par la feuille de prépaie du mois PRÉCÉDENT : le bulletin d'août paie les heures
+    indemnisées, primes et repas de juillet (vérifié sur des documents réels : mêmes quantités).
+    Dans les CheckLine, payslip_value = quantité payée (bulletin), ot_value = quantité annoncée
+    (feuille de prépaie)."""
+    from app.bulletin_parser import normalize, previous_month_start
+
+    check = PayrollCheck(period_start=bulletin.period_start, period_end=bulletin.period_end)
+    try:
+        details = json.loads(bulletin.details_json) if bulletin.details_json else {}
+    except (json.JSONDecodeError, TypeError):
+        details = {}
+    lines = details.get("lines") or []
+
+    previous_start = previous_month_start(bulletin.period_start)
+    check.period_start = previous_start  # période de la feuille de prépaie comparée
+    prepaie = db.get_payslip_by_period(previous_start)
+    if prepaie is None:
+        check.notes.append(
+            "La feuille de prépaie du mois précédent n'est pas importée (onglet Heures sup.) : "
+            "importe-la pour pouvoir comparer."
+        )
+        return check
+    check.period_end = prepaie.period_end
+    try:
+        recap = (json.loads(prepaie.details_json) if prepaie.details_json else {}).get("recap") or {}
+    except (json.JSONDecodeError, TypeError):
+        recap = {}
+    if not recap:
+        check.notes.append(
+            "La feuille de prépaie du mois précédent ne contient pas son détail (import ancien) : "
+            "réimporte son PDF pour pouvoir comparer."
+        )
+        return check
+
+    for label, bulletin_pattern, recap_pattern, unit in _BULLETIN_PAIRS:
+        regex = re.compile(bulletin_pattern)
+        quantities = [
+            line["quantity"] for line in lines
+            if line.get("quantity") is not None and regex.search(normalize(line.get("label", "")))
+        ]
+        paid = max(quantities) if quantities else None
+        announced = find_recap_value(recap, recap_pattern)
+        if paid is None and not announced:
+            continue  # rien d'un côté ni de l'autre
+        line = CheckLine(label, paid, float(announced or 0.0), unit)
+        if paid is None:
+            line.status = "moins"
+            line.comment = (
+                "Annoncé sur la feuille de prépaie mais introuvable sur le bulletin (peut-être "
+                "sous un autre libellé) : à vérifier."
+            )
+        else:
+            _finish(
+                line, 0.01,
+                "Moins payé sur le bulletin qu'annoncé sur la feuille de prépaie : à vérifier.",
+                "Plus payé sur le bulletin qu'annoncé sur la feuille de prépaie.",
+            )
+        check.lines.append(line)
+    if not check.lines:
+        check.notes.append(
+            "Aucun élément comparable trouvé (ni heures indemnisées, ni primes, ni repas)."
+        )
     return check
