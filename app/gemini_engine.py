@@ -22,7 +22,9 @@ from datetime import datetime, timedelta
 
 from PIL import Image
 
-from app.models import ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES, format_trajet
+from app.models import (
+    EXTRA_FIELD_NAMES, ExtractionResult, SUMMARY_FIELDS, SUMMARY_FIELD_NAMES, format_trajet,
+)
 
 MODEL_NAME = "gemini-3.5-flash-lite"
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -111,10 +113,14 @@ lignes sont de deux sortes :
 - Les lignes NON grasses ne sont JAMAIS des trajets, ignore-les toutes : "PS", "FS", "HLP" (trajet
   à vide), "BATT" (battement/attente), "ENTRE" (entretien), les lignes "Coupure ..." (grisées).
 Compte les lignes en gras (courses) avant de répondre : ta liste "trajets" doit avoir exactement
-autant d'entrées. En bas : "Kilomètres ..." (ignore-les), "Commentaires Exploitation" et "Primes
-et Indemnités" (cadres de texte, souvent vides).
-Pour le FORMAT B : "summary" = 0 partout (voir plus bas), et renvoie "tte_hhmm" et
-"amplitude_hhmm" recopiés tels quels du cadre (HH:MM, ex: "07:37" et "09:40").
+autant d'entrées. En bas à droite, un petit cadre donne "Kilomètres Productifs", "Kilomètres HLP"
+et "Kilomètres Totaux" (ex: 160,79 / 39,90 / 200,69) : renvoie-les dans "km_productifs", "km_hlp"
+et "km_totaux". (L'autre tableau "N° Véhicule / Kilomètres Départ / Arrivée / Totaux", rempli à la
+main, est à ignorer.) Viennent enfin "Commentaires Exploitation" et "Primes et Indemnités" (cadres
+de texte, souvent vides).
+Pour le FORMAT B : "summary" = 0 partout (voir plus bas), et renvoie "tte_hhmm", "amplitude_hhmm",
+"indem_coup_hhmm" et "indem_ampl_hhmm" recopiés tels quels du cadre du haut (HH:MM, ex: "07:37",
+"09:40", "00:00", "00:00").
 
 Réponds uniquement avec les champs demandés par le schéma :
 - format : "A" ou "B"
@@ -126,10 +132,11 @@ Réponds uniquement avec les champs demandés par le schéma :
   estimation plutôt que d'omettre le champ - un champ manquant est traité comme une erreur bien
   plus grave qu'une valeur légèrement imprécise). FORMAT B : mets 0 pour tous les champs
   (il n'y a pas de tableau récapitulatif).
-- "tte_hhmm" et "amplitude_hhmm" : FORMAT B uniquement (chaîne vide en FORMAT A)
+- "tte_hhmm", "amplitude_hhmm", "indem_coup_hhmm", "indem_ampl_hhmm" : FORMAT B uniquement
+  (chaîne vide en FORMAT A)
+- "km_productifs", "km_hlp", "km_totaux" : FORMAT B uniquement (0 en FORMAT A)
 - "notes_text" : FORMAT B uniquement : le texte NON VIDE des cadres "Commentaires Exploitation" et
-  "Primes et Indemnités", plus les valeurs non nulles de "Indem. Coup." / "Indem. Ampl." (ex:
-  "Indem. Coup. : 01:30"), une information par ligne ; chaîne vide s'il n'y a rien
+  "Primes et Indemnités", une information par ligne ; chaîne vide s'il n'y a rien
 - "trajets" : liste des VRAIS trajets de service (avec code de service, séparateur "/") ET des
   blocs "PERISCOL" (convertis en "Billet collectif", voir ci-dessus) tels qu'ils apparaissent
   dans le tableau, un par bloc rencontré (les doublons sont normaux et voulus). N'INCLUS JAMAIS
@@ -167,6 +174,11 @@ RESPONSE_SCHEMA = {
         "prise_service_time": {"type": "STRING"},
         "tte_hhmm": {"type": "STRING"},
         "amplitude_hhmm": {"type": "STRING"},
+        "indem_coup_hhmm": {"type": "STRING"},
+        "indem_ampl_hhmm": {"type": "STRING"},
+        "km_productifs": {"type": "NUMBER"},
+        "km_hlp": {"type": "NUMBER"},
+        "km_totaux": {"type": "NUMBER"},
         "notes_text": {"type": "STRING"},
         "summary": {
             "type": "OBJECT",
@@ -405,6 +417,7 @@ def extract_from_pages(
 
     summary_raw = payload.get("summary") or {}
     missing_fields = []
+    km_warning = ""
     if str(payload.get("format") or "").strip().upper() == "B":
         # Feuille de Route : pas de tableau récapitulatif, seulement TTE et Amplitude (HH:MM),
         # converties ici en code plutôt que par Gemini (une conversion HH:MM -> centièmes d'heure
@@ -418,6 +431,19 @@ def extract_from_pages(
                 missing_fields.append(label)
             else:
                 result.summary[field_name] = hours
+        result.extras = {name: 0.0 for name in EXTRA_FIELD_NAMES}
+        for key, field_name in (("indem_coup_hhmm", "indem_coup"), ("indem_ampl_hhmm", "indem_ampl")):
+            result.extras[field_name] = _hhmm_to_hours(str(payload.get(key) or "")) or 0.0
+        for field_name in ("km_productifs", "km_hlp", "km_totaux"):
+            value = payload.get(field_name)
+            if isinstance(value, (int, float)) and value >= 0:
+                result.extras[field_name] = round(float(value), 2)
+        km = result.extras
+        if km["km_totaux"] and abs(km["km_productifs"] + km["km_hlp"] - km["km_totaux"]) > 0.05:
+            km_warning = (
+                f"Kilomètres incohérents (productifs {km['km_productifs']} + HLP {km['km_hlp']} "
+                f"≠ totaux {km['km_totaux']}) : vérifie ces trois valeurs."
+            )
     else:
         for name, label in SUMMARY_FIELDS:
             value = summary_raw.get(name)
@@ -439,6 +465,8 @@ def extract_from_pages(
         gemini_trajets.append(format_trajet(ligne, _normalize_trajet(trajet_text)))
     result.trajets = gemini_trajets
     result.warnings = [str(w) for w in (payload.get("warnings") or [])]
+    if km_warning:
+        result.warnings.append(km_warning)
     if missing_fields:
         result.warnings.append(
             "Gemini n'a pas renvoyé de valeur pour : " + ", ".join(missing_fields)

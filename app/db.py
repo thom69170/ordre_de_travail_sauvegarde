@@ -6,7 +6,7 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from app.models import SUMMARY_FIELD_NAMES, Payslip, WorkOrder, split_trajet
+from app.models import EXTRA_FIELD_NAMES, SUMMARY_FIELD_NAMES, Payslip, WorkOrder, split_trajet
 from app.paths import db_path
 
 SCHEMA = """
@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS work_orders (
     dim_travail REAL DEFAULT 0,
     ferie REAL DEFAULT 0,
     tps_oc REAL DEFAULT 0,
+    km_productifs REAL DEFAULT 0,
+    km_hlp REAL DEFAULT 0,
+    km_totaux REAL DEFAULT 0,
+    indem_coup REAL DEFAULT 0,
+    indem_ampl REAL DEFAULT 0,
     trajets_up_to_date INTEGER DEFAULT 0,
     last_minute_change INTEGER DEFAULT 0
 );
@@ -91,6 +96,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE work_orders ADD COLUMN trajets_up_to_date INTEGER DEFAULT 0")
     if "last_minute_change" not in existing:
         conn.execute("ALTER TABLE work_orders ADD COLUMN last_minute_change INTEGER DEFAULT 0")
+    for name in EXTRA_FIELD_NAMES:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE work_orders ADD COLUMN {name} REAL DEFAULT 0")
 
     existing_payslip_cols = {row["name"] for row in conn.execute("PRAGMA table_info(payslips)").fetchall()}
     if "details_json" not in existing_payslip_cols:
@@ -115,7 +123,8 @@ def _row_to_work_order(row: sqlite3.Row) -> WorkOrder:
 def insert_work_order(wo: WorkOrder) -> int:
     with connect() as conn:
         cols = ["date", "driver_name", "matricule", "source_filename", "source_type",
-                "notes", "created_at"] + SUMMARY_FIELD_NAMES + ["last_minute_change"]
+                "notes", "created_at"] + SUMMARY_FIELD_NAMES + EXTRA_FIELD_NAMES + [
+                    "last_minute_change"]
         values = [getattr(wo, c) for c in cols]
         if not wo.created_at:
             values[cols.index("created_at")] = datetime.now(timezone.utc).isoformat()
@@ -138,7 +147,7 @@ def update_work_order(wo: WorkOrder) -> None:
         raise ValueError("work order without id cannot be updated")
     with connect() as conn:
         cols = ["date", "driver_name", "matricule", "source_filename", "source_type",
-                "notes"] + SUMMARY_FIELD_NAMES + ["last_minute_change"]
+                "notes"] + SUMMARY_FIELD_NAMES + EXTRA_FIELD_NAMES + ["last_minute_change"]
         assignments = ", ".join(f"{c} = ?" for c in cols)
         values = [getattr(wo, c) for c in cols] + [wo.id]
         # L'utilisateur vient de revoir/enregistrer cet OT à la main : on ne le retraitera plus

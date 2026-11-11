@@ -38,10 +38,13 @@ class SummaryCard(ttk.Frame):
         self.value_label.pack(anchor="w", pady=(2, 0))
         self.sub_label = ttk.Label(self, text="", font=("Segoe UI", 8), foreground=TEXT_MUTED)
         self.sub_label.pack(anchor="w")
+        self.extra_label = ttk.Label(self, text="", font=("Segoe UI", 8), foreground=TEXT_MUTED)
+        self.extra_label.pack(anchor="w")
 
-    def set(self, value_text: str, sub_text: str = ""):
+    def set(self, value_text: str, sub_text: str = "", extra_text: str = ""):
         self.value_label.config(text=value_text)
         self.sub_label.config(text=sub_text)
+        self.extra_label.config(text=extra_text)
 
 
 class BarRow(ttk.Frame):
@@ -126,10 +129,25 @@ class StatsTab(ttk.Frame):
                 text += f" · {period_sum.last_minute_count} prime(s) dernière minute"
             return text
 
-        self.card_week.set(hours_to_hm(week_sum.tte), _sub_text(week_sum))
-        self.card_month.set(hours_to_hm(month_sum.tte), _sub_text(month_sum))
-        self.card_year.set(hours_to_hm(year_sum.tte), _sub_text(year_sum))
-        self.card_total.set(hours_to_hm(total_sum.tte), _sub_text(total_sum))
+        def _extra_text(period_sum) -> str:
+            # Kilomètres et indemnités : seulement sur les Feuilles de Route (nouveau format).
+            parts = []
+            if period_sum.km_totaux:
+                km = f"{period_sum.km_totaux:,.0f} km".replace(",", " ")
+                if period_sum.km_hlp:
+                    km += f" (dont {period_sum.km_hlp:,.0f} HLP)".replace(",", " ")
+                parts.append(km)
+            if period_sum.indem_coup:
+                parts.append(f"indem. coup. {hours_to_hm(period_sum.indem_coup)}")
+            if period_sum.indem_ampl:
+                parts.append(f"indem. ampl. {hours_to_hm(period_sum.indem_ampl)}")
+            return " · ".join(parts)
+
+        for card, period_sum in (
+            (self.card_week, week_sum), (self.card_month, month_sum),
+            (self.card_year, year_sum), (self.card_total, total_sum),
+        ):
+            card.set(hours_to_hm(period_sum.tte), _sub_text(period_sum), _extra_text(period_sum))
 
         for child in self.chart_holder.winfo_children():
             child.destroy()

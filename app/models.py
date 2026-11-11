@@ -26,6 +26,19 @@ SUMMARY_FIELDS = [
 
 SUMMARY_FIELD_NAMES = [f[0] for f in SUMMARY_FIELDS]
 
+# Champs propres au nouveau format "Feuille de Route" (absents de l'ancien "ordre de travail",
+# où ils restent à 0) : kilomètres du cadre du bas, et indemnités du cadre du haut (en heures
+# décimales, converties depuis HH:MM comme le TTE).
+EXTRA_FIELDS = [
+    ("km_productifs", "Km productifs"),
+    ("km_hlp", "Km HLP"),
+    ("km_totaux", "Km totaux"),
+    ("indem_coup", "Indem. Coup. (h)"),
+    ("indem_ampl", "Indem. Ampl. (h)"),
+]
+
+EXTRA_FIELD_NAMES = [f[0] for f in EXTRA_FIELDS]
+
 # Séparateur utilisé pour stocker le numéro de ligne (facultatif) avec le libellé du trajet
 # dans un seul champ texte ("164 — CHARMILLES / TARARE GARE") : évite une migration de la base
 # pour les installations déjà en place, tout en restant lisible et facile à reparser.
@@ -78,6 +91,12 @@ class WorkOrder:
     ferie: float = 0.0
     tps_oc: float = 0.0
 
+    km_productifs: float = 0.0
+    km_hlp: float = 0.0
+    km_totaux: float = 0.0
+    indem_coup: float = 0.0
+    indem_ampl: float = 0.0
+
     # Service modifié/édité moins de 48h avant la prise de service (donne droit à une prime
     # selon la convention collective) - détecté depuis la date d'édition de l'OT si Gemini est
     # configuré, sinon coché/décoché à la main (voir gemini_engine.extract_from_pages).
@@ -112,6 +131,7 @@ class ExtractionResult:
     matricule: str = ""
     date: str = ""  # ISO si détectée, sinon ""
     summary: dict[str, float] = field(default_factory=dict)
+    extras: dict[str, float] = field(default_factory=dict)  # voir EXTRA_FIELDS
     trajets: list[str] = field(default_factory=list)
     last_minute_change: bool = False
     # Rotation (sens horaire : 90/180/270) à appliquer aux pages pour les remettre à l'endroit

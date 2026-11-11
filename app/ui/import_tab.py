@@ -14,7 +14,7 @@ from PIL import Image, ImageTk
 
 from app import config, db, ocr_engine, storage
 from app.extraction import extract_from_pages as run_extraction
-from app.models import SUMMARY_FIELDS, WorkOrder, format_trajet, split_trajet
+from app.models import EXTRA_FIELDS, SUMMARY_FIELDS, WorkOrder, format_trajet, split_trajet
 from app.ui.common import (
     ACCENT,
     BG,
@@ -197,6 +197,17 @@ class ImportTab(ttk.Frame):
             entry = LabeledEntry(summary_frame, label, width=8)
             entry.set_decimal(0.0)
             entry.grid(row=i // cols, column=i % cols, padx=6, pady=4, sticky="w")
+            self.summary_entries[field_name] = entry
+
+        extras_frame = ttk.LabelFrame(
+            form, text="Feuille de Route : kilomètres et indemnités (0 sur l'ancien format)",
+            padding=10,
+        )
+        extras_frame.pack(fill="x", padx=4, pady=6)
+        for i, (field_name, label) in enumerate(EXTRA_FIELDS):
+            entry = LabeledEntry(extras_frame, label, width=10)
+            entry.set_decimal(0.0)
+            entry.grid(row=0, column=i, padx=6, pady=4, sticky="w")
             self.summary_entries[field_name] = entry
 
         trajets_frame = ttk.LabelFrame(form, text="Trajets / lignes détectés", padding=10)
@@ -541,7 +552,7 @@ class ImportTab(ttk.Frame):
         if extraction.matricule:
             self.matricule_entry.set(extraction.matricule)
 
-        for field_name, value in extraction.summary.items():
+        for field_name, value in {**extraction.summary, **extraction.extras}.items():
             if field_name in self.summary_entries:
                 self.summary_entries[field_name].set_decimal(value)
 
@@ -653,7 +664,7 @@ class ImportTab(ttk.Frame):
         self.name_entry.set(work_order.driver_name)
         self.matricule_entry.set(work_order.matricule)
         self.last_minute_var.set(bool(work_order.last_minute_change))
-        for field_name, _label in SUMMARY_FIELDS:
+        for field_name, _label in SUMMARY_FIELDS + EXTRA_FIELDS:
             self.summary_entries[field_name].set_decimal(getattr(work_order, field_name))
         self.trajet_listbox.delete(0, "end")
         for label in work_order.trajets:
@@ -730,7 +741,7 @@ class ImportTab(ttk.Frame):
             trajets=list(self.trajet_listbox.get(0, "end")),
             last_minute_change=self.last_minute_var.get(),
         )
-        for field_name, _label in SUMMARY_FIELDS:
+        for field_name, _label in SUMMARY_FIELDS + EXTRA_FIELDS:
             setattr(wo, field_name, self.summary_entries[field_name].get_decimal())
 
         if self.current_source_paths:

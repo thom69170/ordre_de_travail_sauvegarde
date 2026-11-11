@@ -44,7 +44,10 @@ statistiques par semaine / mois / année.
      automatiquement. Pour la Feuille de Route, l'app relève la date, le conducteur, le TTE et
      l'amplitude, et les courses (une par ligne en gras, avec leur numéro de ligne ; les HLP,
      battements, coupures et entretiens sont ignorés) ; les autres colonnes de l'ancien
-     récapitulatif (TPS, TAD...) n'existent plus sur ce format et restent à 0. Un document
+     récapitulatif (TPS, TAD...) n'existent plus sur ce format et restent à 0. Les **kilomètres**
+     (productifs, HLP, totaux) et les indemnités **« Indem. Coup. » / « Indem. Ampl. »** de la
+     Feuille de Route sont aussi relevés, modifiables dans le formulaire, affichés dans
+     l'Historique (colonne Km) et totalisés par période dans les Statistiques. Un document
      **scanné à l'envers** ou de travers est remis à l'endroit automatiquement (l'aperçu aussi).
      Ce nouveau format **nécessite une clé Gemini** : l'OCR local ne le reconnaît pas.
    - **OT sur plusieurs pages** : si un ordre de travail tient sur 2 photos (ou plus), sélectionne-
