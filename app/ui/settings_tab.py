@@ -5,7 +5,8 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from app import config
 from app.ui.common import ACCENT, ERROR_FG, SUCCESS, TEXT_MUTED, WARN_BG, WARN_FG, ScrollableFrame
@@ -45,6 +46,26 @@ class SettingsTab(ttk.Frame):
             update_btn_row, text="Télécharger et installer", command=self._install_update, state="disabled"
         )
         self.install_update_btn.pack(side="left", padx=8)
+
+        backup_frame = ttk.LabelFrame(form, text="Sauvegarde de mes données", padding=14)
+        backup_frame.pack(fill="x", padx=14, pady=(0, 14))
+        ttk.Label(
+            backup_frame,
+            text=(
+                "Enregistre tous tes ordres de travail, tes feuilles de prépaie et les "
+                "photos/PDF importés dans un seul fichier, à garder sur une clé USB ou un "
+                "autre appareil (changement de PC, panne...). La clé Gemini n'est pas incluse."
+            ),
+            wraplength=780, justify="left",
+        ).pack(anchor="w")
+        backup_btn_row = ttk.Frame(backup_frame)
+        backup_btn_row.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            backup_btn_row, text="Sauvegarder mes données...", command=self._create_backup
+        ).pack(side="left")
+        ttk.Button(
+            backup_btn_row, text="Restaurer une sauvegarde...", command=self._restore_backup
+        ).pack(side="left", padx=8)
 
         contact_frame = ttk.LabelFrame(form, text="Contact / Support", padding=14)
         contact_frame.pack(fill="x", padx=14, pady=(0, 14))
@@ -249,6 +270,55 @@ class SettingsTab(ttk.Frame):
         self.update_status_label.config(text="Téléchargement de la mise à jour...", foreground=ACCENT)
         self.update_idletasks()
         threading.Thread(target=self._install_update_worker, daemon=True).start()
+
+    def _create_backup(self):
+        from app import backup
+
+        path_str = filedialog.asksaveasfilename(
+            title="Sauvegarder mes données", defaultextension=".zip",
+            initialfile=backup.default_backup_name(), filetypes=[("Sauvegarde (.zip)", "*.zip")],
+        )
+        if not path_str:
+            return
+        try:
+            count = backup.create_backup(Path(path_str))
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Sauvegarde impossible", f"La sauvegarde a échoué :\n{exc}")
+            return
+        messagebox.showinfo(
+            "Sauvegarde terminée",
+            f"Tes données ({count} fichier(s) + la base) sont sauvegardées dans :\n{path_str}",
+        )
+
+    def _restore_backup(self):
+        from app import backup
+
+        path_str = filedialog.askopenfilename(
+            title="Restaurer une sauvegarde", filetypes=[("Sauvegarde (.zip)", "*.zip")]
+        )
+        if not path_str:
+            return
+        if not messagebox.askyesno(
+            "Restaurer cette sauvegarde ?",
+            "Toutes les données actuelles de l'application seront REMPLACÉES par celles de "
+            "cette sauvegarde.\n\nPar sécurité, les données actuelles sont d'abord sauvegardées "
+            "automatiquement. Continuer ?",
+        ):
+            return
+        try:
+            safety, count = backup.restore_backup(Path(path_str))
+        except backup.BackupError as exc:
+            messagebox.showerror("Restauration impossible", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Restauration impossible", f"La restauration a échoué :\n{exc}")
+            return
+        self.app.reload_all_data()
+        messagebox.showinfo(
+            "Restauration terminée",
+            f"Sauvegarde restaurée ({count} fichier(s) + la base).\n\nTes anciennes données "
+            f"ont été gardées dans :\n{safety}",
+        )
 
     def _install_update_worker(self):
         from app import updater

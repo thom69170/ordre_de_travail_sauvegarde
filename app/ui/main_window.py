@@ -47,6 +47,15 @@ class MainWindow(ttk.Frame):
     def mark_update_available(self) -> None:
         self.notebook.tab(self.settings_tab, text="Paramètres 🔵 MàJ")
 
+    def reload_all_data(self) -> None:
+        """Après une restauration de sauvegarde : tout ce qui est affiché vient de l'ancienne
+        base et doit être relu."""
+        self.import_tab.reset_form()
+        self.history_tab.refresh()
+        self.stats_tab.refresh()
+        self.payslip_tab.reset_form()
+        self.payslip_tab.refresh()
+
     def refresh_other_tabs(self, source: str):
         if source != "history":
             self.history_tab.refresh()

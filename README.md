@@ -91,6 +91,9 @@ statistiques par semaine / mois / année.
      toi-même). Visible aussi dans **Historique** (colonne dédiée, ligne surlignée) et dans
      **Statistiques** (nombre de primes sur la période).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
+   Le bouton **Exporter la liste (Excel)...** enregistre les jours affichés (selon le filtre
+   année/mois) dans un fichier `.csv` qui s'ouvre directement dans Excel : une ligne par jour
+   avec tous les champs, plus une ligne TOTAL.
 4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
    trajets/lignes les plus fréquents.
 5. Onglet **Heures sup.** : suivi des heures supplémentaires (25 %/50 %) relevées sur tes
@@ -113,7 +116,12 @@ statistiques par semaine / mois / année.
    peu puissant) ; l'OCR local ne sert plus que de repli automatique si Gemini échoue. **Si tu configures une clé, tes photos
    sont alors envoyées aux serveurs de Google pour être analysées** (l'onglet l'explique
    clairement) ; sans clé, tout continue de fonctionner en local comme avant. Cet onglet permet
-   aussi de vérifier et d'installer les mises à jour (voir ci-dessous).
+   aussi de vérifier et d'installer les mises à jour (voir ci-dessous), et de **sauvegarder
+   toutes tes données** (ordres de travail, feuilles de prépaie, photos/PDF importés) dans un
+   seul fichier `.zip` à garder ailleurs — **Restaurer une sauvegarde...** remplace les données
+   actuelles par celles du fichier (les données actuelles sont d'abord sauvegardées
+   automatiquement dans le dossier `sauvegardes_auto`). La clé Gemini n'est pas incluse dans la
+   sauvegarde.
 
 ## Mises à jour
 

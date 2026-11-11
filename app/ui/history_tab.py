@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import tkinter as tk
 from datetime import date
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from app import db, storage
 from app.stats import FRENCH_MONTHS, hours_to_hm
@@ -16,6 +17,7 @@ class HistoryTab(ttk.Frame):
     def __init__(self, parent, app):
         super().__init__(parent)
         self.app = app
+        self._orders = []
         self._build_ui()
         self.refresh()
 
@@ -67,6 +69,9 @@ class HistoryTab(ttk.Frame):
         ttk.Button(bottom, text="Modifier", command=self.edit_selected).pack(side="left")
         ttk.Button(bottom, text="Ouvrir le fichier source", command=self.open_selected_file).pack(side="left", padx=8)
         ttk.Button(bottom, text="Supprimer", command=self.delete_selected).pack(side="left")
+        ttk.Button(
+            bottom, text="Exporter la liste (Excel)...", command=self.export_csv
+        ).pack(side="left", padx=8)
 
         self.summary_label = ttk.Label(bottom, text="", font=("Segoe UI", 9, "bold"))
         self.summary_label.pack(side="right")
@@ -95,6 +100,7 @@ class HistoryTab(ttk.Frame):
             self.tree.delete(row)
 
         orders = db.list_work_orders(start_date, end_date)
+        self._orders = orders
         total_tte = 0.0
         for wo in orders:
             try:
@@ -114,6 +120,37 @@ class HistoryTab(ttk.Frame):
         if last_minute_count:
             summary_text += f" · {last_minute_count} changement(s) de dernière minute"
         self.summary_label.config(text=summary_text)
+
+    def export_csv(self):
+        """Exporte les OT actuellement affichés (selon le filtre année/mois) dans un fichier
+        CSV qui s'ouvre dans Excel."""
+        if not self._orders:
+            messagebox.showinfo("Export", "Aucun ordre de travail à exporter pour ce filtre.")
+            return
+        name = "ordres_de_travail"
+        if self.year_var.get() != "Toutes":
+            name += f"_{self.year_var.get()}"
+            if self.month_var.get() != ALL_MONTHS:
+                name += f"-{FRENCH_MONTHS.index(self.month_var.get()) + 1:02d}"
+        path_str = filedialog.asksaveasfilename(
+            title="Exporter les ordres de travail", defaultextension=".csv",
+            initialfile=f"{name}.csv", filetypes=[("Fichier Excel / CSV", "*.csv")],
+        )
+        if not path_str:
+            return
+        from app import backup
+
+        try:
+            backup.export_work_orders_csv(self._orders, Path(path_str))
+        except OSError as exc:
+            messagebox.showerror(
+                "Export impossible",
+                f"Impossible d'écrire ce fichier (est-il ouvert dans Excel ?) :\n{exc}",
+            )
+            return
+        messagebox.showinfo(
+            "Export terminé", f"{len(self._orders)} ordre(s) de travail exporté(s) dans :\n{path_str}"
+        )
 
     def _selected_id(self) -> int | None:
         sel = self.tree.selection()
