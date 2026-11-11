@@ -206,7 +206,15 @@ RESPONSE_SCHEMA = {
         },
         "warnings": {"type": "ARRAY", "items": {"type": "STRING"}},
     },
-    "required": ["driver_name", "matricule", "date", "summary", "trajets"],
+    # Tout est obligatoire (chaîne vide / 0 si absent du document) : laissés facultatifs, la date
+    # d'édition et l'heure de prise de service étaient omises 4 fois sur 5 sur l'ancien format,
+    # ce qui faisait rater la détection "dernière minute".
+    "required": [
+        "driver_name", "matricule", "date", "format", "rotation_degrees", "edition_date",
+        "edition_time", "prise_service_time", "tte_hhmm", "amplitude_hhmm", "indem_coup_hhmm",
+        "indem_ampl_hhmm", "km_productifs", "km_hlp", "km_totaux", "notes_text", "summary",
+        "trajets",
+    ],
 }
 
 
@@ -471,7 +479,8 @@ def _payload_to_result(payload: dict) -> ExtractionResult:
     summary_raw = payload.get("summary") or {}
     missing_fields = []
     km_warning = ""
-    if str(payload.get("format") or "").strip().upper() == "B":
+    document_format = str(payload.get("format") or "").strip().upper()
+    if document_format == "B" or "FEUILLE" in document_format:  # parfois le titre au lieu de "B"
         # Feuille de Route : pas de tableau récapitulatif, seulement TTE et Amplitude (HH:MM),
         # converties ici en code plutôt que par Gemini (une conversion HH:MM -> centièmes d'heure
         # faite par un modèle de langage n'est pas fiable). Les autres colonnes n'existent plus.
