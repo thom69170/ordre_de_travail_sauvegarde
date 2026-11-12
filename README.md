@@ -107,7 +107,13 @@ statistiques par semaine / mois / année.
 5. Onglet **Heures sup.** : suivi des heures supplémentaires (25 %/50 %) relevées sur tes
    **feuilles de prépaie** (le rapport d'activité RNA ; le bulletin de paie officiel, lui, va
    dans l'onglet **Bulletins de paie** - un fichier choisi dans le mauvais onglet est renvoyé
-   automatiquement vers le bon). **L'app ne calcule jamais
+   automatiquement vers le bon). Les deux onglets acceptent aussi un **fichier .zip** (choisi
+   sur le PC ou envoyé depuis le téléphone) contenant plusieurs documents, bulletins et feuilles
+   de prépaie mélangés : chaque PDF est reconnu et envoyé à l'onglet qui sait le lire. Les
+   feuilles de prépaie d'un zip (ou d'une sélection multiple) sont importées directement ; une
+   feuille de prépaie choisie seule passe, comme avant, par le formulaire à relire. Un seul
+   message demande de confirmer le remplacement des documents déjà importés. Seuls les PDF du
+   zip sont lus (le reste est signalé et ignoré), avec des limites de nombre et de taille. **L'app ne calcule jamais
    elle-même tes heures sup** (le mode de calcul exact - modulation du temps de travail - n'est
    pas garanti fiable à deviner) : elle se contente de relire les chiffres déjà présents sur le
    document (import direct du PDF, lecture automatique du texte - pas besoin d'OCR/Gemini, ça

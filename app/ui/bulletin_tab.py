@@ -27,7 +27,10 @@ from app.models import Bulletin
 from app.stats import FRENCH_MONTHS
 from app.ui.common import TEXT_MUTED, WARN_BG, WARN_FG, show_warnings
 
-FILE_TYPES = [("PDF", "*.pdf"), ("Tous les fichiers", "*.*")]
+FILE_TYPES = [
+    ("Bulletins de paie (PDF ou ZIP)", "*.pdf *.zip"),
+    ("Tous les fichiers", "*.*"),
+]
 
 SECTION_TITLES = {
     SECTION_BRUT: ("Éléments de revenu brut", "Quantité", "Valeur unitaire", "Montant"),
@@ -94,7 +97,8 @@ class BulletinTab(ttk.Frame):
         ttk.Label(
             self,
             text="Les chiffres sont recopiés tels quels du bulletin (lecture locale du PDF, sans "
-                 "IA). Plusieurs bulletins peuvent être sélectionnés d'un coup.",
+                 "IA). Plusieurs bulletins peuvent être sélectionnés d'un coup, ou reçus dans un "
+                 "fichier .zip (qui peut aussi contenir des feuilles de prépaie).",
             foreground=TEXT_MUTED, padding=(12, 0, 12, 6),
         ).pack(anchor="w")
 
@@ -130,10 +134,11 @@ class BulletinTab(ttk.Frame):
 
     def choose_files(self):
         paths = filedialog.askopenfilenames(
-            title="Choisir un ou plusieurs bulletins de paie", filetypes=FILE_TYPES
+            title="Choisir un ou plusieurs bulletins de paie (PDF ou fichier .zip)",
+            filetypes=FILE_TYPES,
         )
         if paths:
-            self.import_files([Path(p) for p in paths])
+            self.app.import_documents([Path(p) for p in paths], "bulletin")
 
     def _open_phone_upload_dialog(self):
         from app.ui.phone_upload_dialog import PhoneUploadDialog
@@ -145,35 +150,32 @@ class BulletinTab(ttk.Frame):
             return
         self._phone_dialog = PhoneUploadDialog(
             self.winfo_toplevel(),
-            on_file_received=lambda path, _append=False, _total=1: self.import_files([path]),
+            on_file_received=lambda path, _append=False, _total=1: self.app.import_documents(
+                [path], "bulletin"
+            ),
             dialog_title="Recevoir un bulletin de paie depuis le téléphone",
             waiting_text="En attente d'un bulletin de paie... (tu peux en envoyer plusieurs)",
             received_noun="Fichier",
             page_title="Bulletins de paie",
-            instruction="Choisis le ou les PDF de tes bulletins de paie, puis envoie-les au PC.",
-            choose_label="Choisir un fichier PDF",
-            accept=".pdf,application/pdf",
+            instruction="Choisis le ou les PDF de tes bulletins de paie (ou un fichier .zip qui en "
+                        "contient plusieurs), puis envoie-les au PC.",
+            choose_label="Choisir un fichier PDF ou ZIP",
+            accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
             capture=False,
             multiple=True,
-            allowed_suffixes=frozenset({".pdf"}),
+            allowed_suffixes=frozenset({".pdf", ".zip"}),
             default_suffix=".pdf",
         )
 
-    def import_files(self, paths: list[Path]) -> None:
-        """Importe chaque bulletin directement (pas de formulaire à valider : c'est un PDF
-        numérique, relu avec recoupements). Une feuille de prépaie glissée ici par erreur est
-        renvoyée vers son onglet."""
-        imported: list[str] = []
-        errors: list[str] = []
+    def import_files(self, paths: list[Path], extra_messages: list[str] | None = None) -> None:
+        """Importe directement les bulletins donnés (déjà reconnus comme tels par
+        MainWindow.import_documents) : pas de formulaire à valider, c'est un PDF numérique relu
+        avec recoupements. extra_messages : avertissements venus de l'aiguillage (fichiers ignorés,
+        zip illisible...), affichés avec les nôtres."""
+        errors: list[str] = list(extra_messages or [])
         warnings: list[str] = []
-        prepaie: Path | None = None
+        parsed: list[tuple[Path, object]] = []
         for path in paths:
-            if not is_bulletin(path):
-                if self._looks_like_prepaie(path):
-                    prepaie = path
-                else:
-                    errors.append(f"{path.name} : ce n'est pas un bulletin de paie reconnu.")
-                continue
             try:
                 data = extract_bulletin(path)
             except BulletinError as exc:
@@ -185,18 +187,29 @@ class BulletinTab(ttk.Frame):
             if not data.period_start:
                 errors.append(f"{path.name} : période du bulletin introuvable.")
                 continue
+            parsed.append((path, data))
 
+        # Une seule question pour tous les bulletins déjà importés (un zip peut en contenir 12).
+        existing_months = [
+            _month_label(d.period_start) for _p, d in parsed
+            if db.get_bulletin_by_period(d.period_start) is not None
+        ]
+        replace_existing = True
+        if existing_months:
+            replace_existing = messagebox.askyesno(
+                "Bulletins déjà importés",
+                f"{len(existing_months)} bulletin(s) déjà importé(s) : {', '.join(existing_months)}."
+                "\n\nLes remplacer ? (Non : ils sont ignorés.)",
+            )
+
+        imported: list[str] = []
+        for path, data in parsed:
             existing = db.get_bulletin_by_period(data.period_start)
             if existing is not None:
-                if not messagebox.askyesno(
-                    "Bulletin déjà importé",
-                    f"Le bulletin {_of_month(data.period_start)} est déjà importé. "
-                    "Le remplacer ?",
-                ):
+                if not replace_existing:
                     continue
                 if existing.source_filename:
                     storage.delete_bulletin_file(existing.source_filename)
-
             bulletin = Bulletin(
                 id=existing.id if existing else None,
                 period_start=data.period_start, period_end=data.period_end,
@@ -222,25 +235,9 @@ class BulletinTab(ttk.Frame):
         if frame:
             frame.pack(fill="x", pady=(0, 6))
         if imported:
-            self.status_label.config(text="Importé : " + ", ".join(imported))
-        elif errors:
+            self.status_label.config(text=f"{len(imported)} importé(s) : " + ", ".join(imported))
+        elif paths or errors:
             self.status_label.config(text="Aucun bulletin importé.")
-
-        if prepaie is not None:
-            # Document de l'autre onglet : on l'y envoie plutôt que de le refuser.
-            self.app.select_tab("payslip")
-            self.app.payslip_tab._load_file(prepaie, _routed=True)
-
-    @staticmethod
-    def _looks_like_prepaie(path: Path) -> bool:
-        if path.suffix.lower() != ".pdf":
-            return False
-        try:
-            from app.payslip_parser import extract_payslip
-
-            return bool(extract_payslip(path).period_start)
-        except Exception:  # noqa: BLE001
-            return False
 
     # ------------------------------------------------------------- actions
 

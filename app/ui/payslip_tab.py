@@ -16,7 +16,7 @@ from app.payslip_parser import extract_payslip
 from app.ui.common import ACCENT, LabeledEntry, TEXT_MUTED, WARN_BG, WARN_FG, format_decimal
 
 FILE_TYPES = [
-    ("PDF", "*.pdf"),
+    ("Feuilles de prépaie (PDF ou ZIP)", "*.pdf *.zip"),
     ("Tous les fichiers", "*.*"),
 ]
 
@@ -152,12 +152,92 @@ class PayslipTab(ttk.Frame):
     # ------------------------------------------------------------- import
 
     def choose_file(self):
-        path_str = filedialog.askopenfilename(
-            title="Choisir une feuille de prépaie", filetypes=FILE_TYPES
+        paths = filedialog.askopenfilenames(
+            title="Choisir une feuille de prépaie (PDF ou fichier .zip)", filetypes=FILE_TYPES
         )
-        if not path_str:
-            return
-        self._load_file(Path(path_str))
+        if paths:
+            self.app.import_documents([Path(p) for p in paths], "payslip")
+
+    def review_single(self, path: Path, extra_messages: list[str] | None = None) -> None:
+        """Une seule feuille de prépaie : chargée dans le formulaire, à relire avant de
+        l'enregistrer (mise en file si un relevé est déjà en cours de relecture)."""
+        self._show_messages(extra_messages)
+        self._phone_queue.append(path)
+        self._maybe_start_next_from_queue()
+
+    def _show_messages(self, messages: list[str] | None) -> None:
+        for child in self.warnings_holder.winfo_children():
+            child.destroy()
+        if messages:
+            from app.ui.common import show_warnings
+
+            frame = show_warnings(self.warnings_holder, messages)
+            if frame:
+                frame.pack(fill="x", pady=6)
+
+    def import_many(self, paths: list[Path], extra_messages: list[str] | None = None) -> None:
+        """Plusieurs feuilles de prépaie (sélection multiple ou .zip) : importées directement,
+        sans formulaire - ce sont des PDF numériques lus avec le même lecteur que pour un import
+        unique - avec la liste des avertissements éventuels."""
+        messages: list[str] = list(extra_messages or [])
+        parsed = []
+        for path in paths:
+            try:
+                result = extract_payslip(path)
+            except Exception as exc:  # noqa: BLE001
+                messages.append(f"{path.name} : lecture impossible ({exc}).")
+                continue
+            if not result.period_start:
+                messages.append(f"{path.name} : période de la feuille de prépaie introuvable.")
+                continue
+            parsed.append((path, result))
+
+        existing_periods = [
+            _fmt_date(r.period_start) for _p, r in parsed
+            if db.get_payslip_by_period(r.period_start) is not None
+        ]
+        replace_existing = True
+        if existing_periods:
+            replace_existing = messagebox.askyesno(
+                "Relevés déjà importés",
+                f"{len(existing_periods)} relevé(s) déjà importé(s) (périodes commençant le "
+                f"{', '.join(existing_periods)}).\n\nLes remplacer ? (Non : ils sont ignorés.)",
+            )
+
+        imported: list[str] = []
+        for path, result in parsed:
+            existing = db.get_payslip_by_period(result.period_start)
+            if existing is not None:
+                if not replace_existing:
+                    continue
+                if existing.source_filename:
+                    storage.delete_payslip_file(existing.source_filename)
+            details = ""
+            if result.recap or result.compteurs:
+                details = json.dumps(
+                    {"recap": result.recap, "compteurs": result.compteurs}, ensure_ascii=False
+                )
+            payslip = Payslip(
+                id=existing.id if existing else None,
+                period_start=result.period_start, period_end=result.period_end,
+                hs_25=result.hs_25, hs_50=result.hs_50,
+                cumul_hs_25=result.cumul_hs_25, cumul_hs_50=result.cumul_hs_50,
+                repos_differe=result.repos_differe, details_json=details,
+                source_filename=storage.store_payslip_file(path, result.period_start),
+            )
+            if existing:
+                db.update_payslip(payslip)
+            else:
+                db.insert_payslip(payslip)
+            imported.append(_fmt_date(result.period_start))
+            messages += [f"{_fmt_date(result.period_start)} : {w}" for w in result.warnings]
+
+        self.refresh()
+        self._show_messages(messages)
+        if imported:
+            self.file_label.config(text=f"{len(imported)} relevé(s) importé(s) : " + ", ".join(imported))
+        elif paths or messages:
+            self.file_label.config(text="Aucun relevé importé.")
 
     def _open_phone_upload_dialog(self):
         from app.ui.phone_upload_dialog import PhoneUploadDialog
@@ -169,11 +249,12 @@ class PayslipTab(ttk.Frame):
             waiting_text="En attente d'une feuille de prépaie... (tu peux en envoyer plusieurs à la suite)",
             received_noun="Fichier",
             page_title="Heures sup.",
-            instruction="Choisis le PDF de ta feuille de prépaie, puis envoie-le au PC.",
-            choose_label="Choisir un fichier PDF",
-            accept=".pdf,application/pdf",
+            instruction="Choisis le PDF de ta feuille de prépaie (ou un fichier .zip qui en contient "
+                        "plusieurs), puis envoie-le au PC.",
+            choose_label="Choisir un fichier PDF ou ZIP",
+            accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
             capture=False,
-            allowed_suffixes=frozenset({".pdf"}),
+            allowed_suffixes=frozenset({".pdf", ".zip"}),
             default_suffix=".pdf",
         )
 
@@ -183,8 +264,8 @@ class PayslipTab(ttk.Frame):
         # ignoré ici. Comme pour l'onglet Importer, le téléphone peut envoyer plusieurs feuilles
         # à la suite avec le même QR code, on les empile et on ne charge la suivante qu'une fois
         # le relevé courant enregistré ou réinitialisé.
-        self._phone_queue.append(path)
-        self._maybe_start_next_from_queue()
+        # Le fichier reçu peut être un .zip ou un bulletin de paie : l'aiguillage commun décide.
+        self.app.import_documents([path], "payslip")
 
     def _maybe_start_next_from_queue(self):
         self._update_queue_label()
@@ -206,16 +287,7 @@ class PayslipTab(ttk.Frame):
         self.reset_form()
         self._maybe_start_next_from_queue()
 
-    def _load_file(self, path: Path, _routed: bool = False):
-        # Un bulletin de paie choisi ici par erreur est envoyé vers son onglet plutôt que refusé.
-        if not _routed:
-            from app.bulletin_parser import is_bulletin
-
-            if is_bulletin(path):
-                self.app.select_tab("bulletin")
-                self.app.bulletin_tab.import_files([path])
-                self._maybe_start_next_from_queue()
-                return
+    def _load_file(self, path: Path):
         try:
             result = extract_payslip(path)
         except Exception as exc:  # noqa: BLE001

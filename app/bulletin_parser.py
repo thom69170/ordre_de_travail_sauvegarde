@@ -95,7 +95,10 @@ def is_bulletin(path: Path) -> bool:
         return False
     try:
         pdf = _open(path)
-        text = pdf[0].get_textpage().get_text_range() if len(pdf) else ""
+        try:
+            text = pdf[0].get_textpage().get_text_range() if len(pdf) else ""
+        finally:
+            pdf.close()  # sinon le fichier reste verrouillé sous Windows (suppression impossible)
     except Exception:  # noqa: BLE001
         return False
     return "BULLETIN DE PAIE" in text and "Eléments de revenu brut" in text
@@ -300,10 +303,13 @@ def extract_bulletin(path: Path) -> BulletinData:
     pdf = _open(path)
     data = BulletinData()
     full_text = []
-    for i in range(len(pdf)):
-        textpage = pdf[i].get_textpage()
-        full_text.append(textpage.get_text_range())
-        _parse_page(textpage, data)
+    try:
+        for i in range(len(pdf)):
+            textpage = pdf[i].get_textpage()
+            full_text.append(textpage.get_text_range())
+            _parse_page(textpage, data)
+    finally:
+        pdf.close()
     text = "\n".join(full_text)
     if "BULLETIN DE PAIE" not in text:
         raise BulletinError("Ce document n'est pas un bulletin de paie reconnu.")

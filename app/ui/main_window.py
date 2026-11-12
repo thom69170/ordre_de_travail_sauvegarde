@@ -49,6 +49,51 @@ class MainWindow(ttk.Frame):
         if widget is not None:
             self.notebook.select(widget)
 
+    def import_documents(self, paths, origin: str) -> None:
+        """Point d'entrée unique pour importer des documents de paie, quel que soit l'onglet où
+        ils ont été choisis ou reçus : les .zip sont ouverts, chaque PDF est reconnu (bulletin de
+        paie / feuille de prépaie) et envoyé à l'onglet qui sait le lire. origin : "bulletin" ou
+        "payslip" (l'onglet d'où vient l'import, qui affiche les messages d'erreur)."""
+        from pathlib import Path
+
+        from app import zip_import
+
+        paths = [Path(p) for p in paths]
+        has_zip = any(p.suffix.lower() == ".zip" for p in paths)
+        expanded = zip_import.expand_documents(paths)
+        try:
+            bulletins, prepaies = [], []
+            errors = list(expanded.errors)
+            for path in expanded.files:
+                kind = zip_import.classify(path)
+                if kind == zip_import.KIND_BULLETIN:
+                    bulletins.append(path)
+                elif kind == zip_import.KIND_PREPAIE:
+                    prepaies.append(path)
+                else:
+                    errors.append(f"{path.name} : ni un bulletin de paie ni une feuille de prépaie reconnus.")
+
+            origin_is_bulletin = origin == "bulletin"
+            if bulletins or origin_is_bulletin:
+                self.bulletin_tab.import_files(bulletins, errors if origin_is_bulletin else [])
+            if prepaies or not origin_is_bulletin:
+                if len(prepaies) == 1 and not has_zip:
+                    # Une seule feuille de prépaie : le formulaire habituel, à relire avant d'enregistrer.
+                    self.payslip_tab.review_single(prepaies[0], [] if origin_is_bulletin else errors)
+                else:
+                    self.payslip_tab.import_many(prepaies, [] if origin_is_bulletin else errors)
+
+            if bulletins and prepaies:
+                self.select_tab(origin)
+            elif bulletins:
+                self.select_tab("bulletin")
+            elif prepaies:
+                self.select_tab("payslip")
+            else:
+                self.select_tab(origin)
+        finally:
+            expanded.cleanup()
+
     def mark_update_available(self) -> None:
         self.notebook.tab(self.settings_tab, text="Paramètres 🔵 MàJ")
 

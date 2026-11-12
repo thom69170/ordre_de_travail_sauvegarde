@@ -40,9 +40,10 @@ def _extract_all_text(path: Path) -> str:
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument(str(path))
-    parts = []
-    for i in range(len(pdf)):
-        parts.append(pdf[i].get_textpage().get_text_range())
+    try:
+        parts = [pdf[i].get_textpage().get_text_range() for i in range(len(pdf))]
+    finally:
+        pdf.close()  # sinon le fichier reste verrouillé sous Windows (suppression impossible)
     return "\n".join(parts)
 
 
