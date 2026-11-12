@@ -159,7 +159,7 @@ class PayslipTab(ttk.Frame):
             "hs50": "HS 50%", "cumul25": "Cumul annuel 25%", "cumul50": "Cumul annuel 50%",
         }
         widths = {
-            "periode": 220, "reposdiffere": 110, "hs25": 90, "hs50": 90,
+            "periode": 220, "reposdiffere": 110, "hs25": 110, "hs50": 110,
             "cumul25": 130, "cumul50": 130,
         }
         for col in columns:
@@ -179,6 +179,10 @@ class PayslipTab(ttk.Frame):
         ).pack(side="left", padx=8)
 
         self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        self.deduced_legend = ttk.Label(
+            self, text="", foreground=TEXT_MUTED, wraplength=900, justify="left",
+        )
+        self.deduced_legend.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
 
     # ------------------------------------------------------------- import
 
@@ -358,9 +362,24 @@ class PayslipTab(ttk.Frame):
 
         for child in self.warnings_holder.winfo_children():
             child.destroy()
-        if result.warnings:
+        notes = list(result.warnings)
+        from app.payroll_check import cumul_increase
+
+        for kind, printed, cumul, label in (
+            ("50", result.hs_50, result.cumul_hs_50, "HS 50 %"),
+            ("25", result.hs_25, result.cumul_hs_25, "HS 25 %"),
+        ):
+            deduced = cumul_increase(result.period_start, cumul, kind) if not printed else None
+            if deduced:
+                notes.append(
+                    f"La ligne « {label} » du mois n'est pas imprimée sur cette feuille, mais son "
+                    f"cumul annuel a augmenté de {format_decimal(deduced)} h depuis le mois précédent : "
+                    "ce sont probablement les heures du mois (valeur indicative, le champ du "
+                    "formulaire garde ce qui est imprimé)."
+                )
+        if notes:
             from app.ui.common import show_warnings
-            frame = show_warnings(self.warnings_holder, result.warnings)
+            frame = show_warnings(self.warnings_holder, notes)
             if frame:
                 frame.pack(fill="x", pady=6)
 
@@ -639,10 +658,29 @@ class PayslipTab(ttk.Frame):
     def refresh(self):
         for row in self.tree.get_children():
             self.tree.delete(row)
+        from app.payroll_check import cumul_increase
+
+        any_deduced = False
         for p in db.list_payslips():
             periode = f"{_fmt_date(p.period_start)} — {_fmt_date(p.period_end)}"
+            shown = {}
+            for kind, printed, cumul in (("25", p.hs_25, p.cumul_hs_25), ("50", p.hs_50, p.cumul_hs_50)):
+                text = format_decimal(printed)
+                if not printed:
+                    # Ligne mensuelle absente mais cumul annuel en hausse : valeur déduite, affichée
+                    # à part et jamais enregistrée à la place de ce qui est imprimé.
+                    deduced = cumul_increase(p.period_start, cumul, kind)
+                    if deduced:
+                        text = f"{format_decimal(deduced)} (déduit)"
+                        any_deduced = True
+                shown[kind] = text
             self.tree.insert("", "end", iid=str(p.id), values=(
-                periode, format_decimal(p.repos_differe), format_decimal(p.hs_25),
-                format_decimal(p.hs_50), format_decimal(p.cumul_hs_25),
-                format_decimal(p.cumul_hs_50),
+                periode, format_decimal(p.repos_differe), shown["25"], shown["50"],
+                format_decimal(p.cumul_hs_25), format_decimal(p.cumul_hs_50),
             ))
+        self.deduced_legend.config(
+            text="« (déduit) » : la ligne d'heures sup. du mois n'est pas imprimée sur cette feuille "
+                 "de prépaie, mais son cumul annuel a augmenté par rapport au mois précédent : "
+                 "l'écart est affiché ici à titre indicatif (le relevé enregistré garde ce qui est "
+                 "imprimé)." if any_deduced else ""
+        )

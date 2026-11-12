@@ -117,7 +117,11 @@ statistiques par semaine / mois / année.
    elle-même tes heures sup** (le mode de calcul exact - modulation du temps de travail - n'est
    pas garanti fiable à deviner) : elle se contente de relire les chiffres déjà présents sur le
    document (import direct du PDF, lecture automatique du texte - pas besoin d'OCR/Gemini, ça
-   marche même sans clé configurée) et de les garder en historique. Vérifie toujours les valeurs
+   marche même sans clé configurée) et de les garder en historique. Quand la ligne d'heures sup.
+   du mois n'est pas imprimée sur une feuille de prépaie alors que son **cumul annuel a augmenté**
+   (cela arrive), la liste affiche la hausse du cumul avec la mention **« (déduit) »**, à titre
+   indicatif : le relevé enregistré garde ce qui est imprimé, rien n'est écrit à la place du
+   document. Vérifie toujours les valeurs
    pré-remplies avant d'enregistrer. Comme dans l'onglet Importer, tu peux aussi envoyer le PDF
    depuis ton téléphone via le bouton **Recevoir depuis le téléphone...** (même Wi-Fi requis),
    en enchaînant plusieurs feuilles de prépaie à la suite avec le même QR code si besoin.

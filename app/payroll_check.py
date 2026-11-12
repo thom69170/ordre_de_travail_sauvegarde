@@ -188,20 +188,26 @@ def format_hours(value: float) -> str:
     return f"{value:.2f}".replace(".", ",") + " h"
 
 
-def _cumul_hs50_increase(prepaie: Payslip) -> float | None:
-    """Heures HS 50 % du mois d'une feuille de prépaie, déduites de la hausse de son cumul annuel
-    par rapport à la feuille du mois précédent (None si on ne peut pas le savoir)."""
+def cumul_increase(period_start: str, cumul_now: float, kind: str) -> float | None:
+    """Heures HS du mois (kind : "25" ou "50"), déduites de la hausse du cumul annuel imprimé par
+    rapport à la feuille de prépaie du mois précédent. None si on ne peut pas le savoir (feuille du
+    mois précédent non importée) ou s'il n'y a pas de hausse. À n'utiliser que quand la ligne
+    mensuelle de HS est absente du document : ce n'est pas une valeur imprimée."""
     from app.bulletin_parser import previous_month_start
 
-    if prepaie.period_start[5:7] == "01":  # le cumul repart de zéro en janvier
+    if period_start[5:7] == "01":  # le cumul repart de zéro en janvier
         before = 0.0
     else:
-        earlier = db.get_payslip_by_period(previous_month_start(prepaie.period_start))
+        earlier = db.get_payslip_by_period(previous_month_start(period_start))
         if earlier is None:
             return None
-        before = earlier.cumul_hs_50
-    delta = round(prepaie.cumul_hs_50 - before, 2)
+        before = earlier.cumul_hs_25 if kind == "25" else earlier.cumul_hs_50
+    delta = round(cumul_now - before, 2)
     return delta if delta > 0 else None
+
+
+def _cumul_hs50_increase(prepaie: Payslip) -> float | None:
+    return cumul_increase(prepaie.period_start, prepaie.cumul_hs_50, "50")
 
 
 def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
