@@ -52,8 +52,8 @@ class SettingsTab(ttk.Frame):
         ttk.Label(
             backup_frame,
             text=(
-                "Enregistre tous tes ordres de travail, tes feuilles de prépaie et les "
-                "photos/PDF importés dans un seul fichier, à garder sur une clé USB ou un "
+                "Enregistre tous tes ordres de travail, tes feuilles de prépaie, tes bulletins "
+                "de paie et les photos/PDF importés dans un seul fichier, à garder sur une clé USB ou un "
                 "autre appareil (changement de PC, panne...). La clé Gemini n'est pas incluse."
             ),
             wraplength=780, justify="left",

@@ -278,7 +278,7 @@ def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
                 "sous un autre libellé) : à vérifier."
             )
         else:
-            note = line.comment
+            note, line.comment = line.comment, ""
             _finish(
                 line, 0.02 if unit == "h" else 0.01,
                 "Moins payé sur le bulletin qu'annoncé sur la feuille de prépaie : à vérifier.",

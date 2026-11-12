@@ -99,7 +99,7 @@ class BulletinTab(ttk.Frame):
             text="Les chiffres sont recopiés tels quels du bulletin (lecture locale du PDF, sans "
                  "IA). Plusieurs bulletins peuvent être sélectionnés d'un coup, ou reçus dans un "
                  "fichier .zip (qui peut aussi contenir des feuilles de prépaie).",
-            foreground=TEXT_MUTED, padding=(12, 0, 12, 6),
+            foreground=TEXT_MUTED, padding=(12, 0, 12, 6), wraplength=1000, justify="left",
         ).pack(anchor="w")
 
         self.warnings_holder = ttk.Frame(self)

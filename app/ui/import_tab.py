@@ -160,26 +160,30 @@ class ImportTab(ttk.Frame):
 
         header = ttk.LabelFrame(form, text="Ordre de travail", padding=10)
         header.pack(fill="x", padx=4, pady=6)
+        # Première ligne dans son propre cadre : sans lui, la ligne des cases à cocher se
+        # retrouvait à DROITE des boutons (et rognée) au lieu d'en dessous.
+        header_row1 = ttk.Frame(header)
+        header_row1.pack(fill="x")
 
-        self.date_entry = LabeledEntry(header, "Date (JJ/MM/AAAA)", width=14)
+        self.date_entry = LabeledEntry(header_row1, "Date (JJ/MM/AAAA)", width=14)
         self.date_entry.pack(side="left", padx=(0, 10))
         self.date_entry.set(date.today().strftime("%d/%m/%Y"))
 
-        self.name_entry = LabeledEntry(header, "Nom du conducteur", width=24)
+        self.name_entry = LabeledEntry(header_row1, "Nom du conducteur", width=24)
         self.name_entry.pack(side="left", padx=(0, 10))
 
-        self.matricule_entry = LabeledEntry(header, "Matricule", width=10)
+        self.matricule_entry = LabeledEntry(header_row1, "Matricule", width=10)
         self.matricule_entry.pack(side="left")
 
         # Affiché uniquement en mode édition (un OT existant a été ouvert depuis l'Historique) :
         # voir load_for_edit/reset_form pour l'affichage/masquage.
         self.back_btn = ttk.Button(
-            header, text="← Retour à l'historique", command=self._back_to_history
+            header_row1, text="← Retour à l'historique", command=self._back_to_history
         )
 
-        self.reset_btn = ttk.Button(header, text="Réinitialiser le formulaire", command=self._on_reset_clicked)
+        self.reset_btn = ttk.Button(header_row1, text="Réinitialiser le formulaire", command=self._on_reset_clicked)
         self.reset_btn.pack(side="left", padx=(20, 6))
-        self.save_btn = ttk.Button(header, text="Enregistrer", command=self.save)
+        self.save_btn = ttk.Button(header_row1, text="Enregistrer", command=self.save)
         self.save_btn.pack(side="left")
 
         header_row2 = ttk.Frame(header)
