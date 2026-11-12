@@ -234,11 +234,20 @@ def _parse_page(textpage, data: BulletinData) -> None:
         if not numbers:
             pending.append(label)
             continue
+        # Un chiffre peut faire partie du libellé ("PAIEMENT MALADIE TAUX 1 600 712227 42734" :
+        # le "1" n'est pas une colonne). On cherche donc la plus longue suite de nombres finale
+        # qui correspond à une ligne positionnée (les nombres du libellé sont à gauche de la zone
+        # des colonnes, donc absents des lignes positionnées).
+        match = None
+        for count in range(len(numbers), 0, -1):
+            key = tuple(numbers[-count:])
+            match = next((r for r in numeric_rows if not r["used"] and r["key"] == key), None)
+            if match is not None:
+                label = " ".join([label] + numbers[:-count]).strip()
+                break
         if not label:
             label = " ".join(pending[-2:]) if pending else ""
         pending = []
-        key = tuple(numbers)
-        match = next((r for r in numeric_rows if not r["used"] and r["key"] == key), None)
         if match is None or not label:
             continue
         match["used"] = True
@@ -339,7 +348,10 @@ def extract_bulletin(path: Path) -> BulletinData:
     net_line = find_line(data.lines, r"^net a payer")
     pas_line = find_line(data.lines, r"^prelevement a la source/dgfip")
     if net_line and net_line.amount is not None:
-        expected = net_line.amount - (pas_line.amount if pas_line and pas_line.amount else 0.0)
+        # Le prélèvement à la source est imprimé avec son signe (négatif quand il est retenu).
+        # La ligne "PRELEVEMENT A LA SOURCE/ANNUEL" (aussi négative sur certains bulletins) est
+        # informative : elle n'est pas déduite du montant payé (vérifié sur 32 bulletins réels).
+        expected = net_line.amount + (pas_line.amount if pas_line and pas_line.amount else 0.0)
         if data.net_paye:
             if abs(expected - data.net_paye) > 0.02:
                 data.warnings.append(

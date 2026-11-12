@@ -176,11 +176,32 @@ def check_payslip(payslip: Payslip) -> PayrollCheck:
 # Motifs appliqués aux libellés sans accents ni majuscules.
 _BULLETIN_PAIRS = (
     ("Heures indemnisées", r"\bh indemnitaire", r"^heures indemnisees", "h"),
+    ("Heures supplémentaires 150 % (HS 50 %)", r"heures suppl\.? 150", r"^hs 150", "h"),
     ("Prime modification de service", r"prime modification", r"prime modification", ""),
     ("Prime urbain (+5 trajets)", r"prime urbain", r"prime urbain", ""),
     ("Repas unique", r"indemnite repas unique", r"^repas unique", ""),
     ("Indemnité spéciale", r"indem\S* (ns )?speciale", r"^indemnite speciale", ""),
 )
+
+
+def format_hours(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",") + " h"
+
+
+def _cumul_hs50_increase(prepaie: Payslip) -> float | None:
+    """Heures HS 50 % du mois d'une feuille de prépaie, déduites de la hausse de son cumul annuel
+    par rapport à la feuille du mois précédent (None si on ne peut pas le savoir)."""
+    from app.bulletin_parser import previous_month_start
+
+    if prepaie.period_start[5:7] == "01":  # le cumul repart de zéro en janvier
+        before = 0.0
+    else:
+        earlier = db.get_payslip_by_period(previous_month_start(prepaie.period_start))
+        if earlier is None:
+            return None
+        before = earlier.cumul_hs_50
+    delta = round(prepaie.cumul_hs_50 - before, 2)
+    return delta if delta > 0 else None
 
 
 def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
@@ -227,9 +248,23 @@ def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
         ]
         paid = max(quantities) if quantities else None
         announced = find_recap_value(recap, recap_pattern)
+        deduced_note = ""
+        if paid and not announced and recap_pattern == r"^hs 150":
+            # La ligne mensuelle "HS 150%" manque sur certaines feuilles de prépaie alors que le
+            # cumul annuel a bien augmenté (constaté sur des documents réels : +3,66 en avril 2026,
+            # payé 3,67 sur le bulletin de mai) : on en déduit les heures du mois.
+            delta = _cumul_hs50_increase(prepaie)
+            if delta:
+                announced = delta
+                deduced_note = (
+                    f"La ligne « HS 150% » du mois n'est pas imprimée sur la feuille de prépaie ; "
+                    f"les {format_hours(delta)} sont déduits de la hausse de son cumul annuel "
+                    "HS 50 %."
+                )
         if paid is None and not announced:
             continue  # rien d'un côté ni de l'autre
         line = CheckLine(label, paid, float(announced or 0.0), unit)
+        line.comment = deduced_note
         if paid is None:
             line.status = "moins"
             line.comment = (
@@ -237,11 +272,14 @@ def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
                 "sous un autre libellé) : à vérifier."
             )
         else:
+            note = line.comment
             _finish(
-                line, 0.01,
+                line, 0.02 if unit == "h" else 0.01,
                 "Moins payé sur le bulletin qu'annoncé sur la feuille de prépaie : à vérifier.",
                 "Plus payé sur le bulletin qu'annoncé sur la feuille de prépaie.",
             )
+            if note:
+                line.comment = (note + " " + line.comment).strip()
         check.lines.append(line)
     if not check.lines:
         check.notes.append(

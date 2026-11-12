@@ -189,6 +189,22 @@ class BulletinTab(ttk.Frame):
                 continue
             parsed.append((path, data))
 
+        # Un même mois présent plusieurs fois : on garde le bulletin le plus détaillé.
+        best: dict[str, tuple] = {}
+        for item in parsed:
+            path, data = item
+            rank = (len(data.lines), path.stat().st_size if path.exists() else 0)
+            if data.period_start not in best or rank > best[data.period_start][0]:
+                best[data.period_start] = (rank, item)
+        for path, data in parsed:
+            winner = best[data.period_start][1][0]
+            if winner is not path:
+                errors.append(
+                    f"{_month_label(data.period_start)} : « {path.name} » ignoré (doublon de "
+                    f"« {winner.name} »)."
+                )
+        parsed = [item for _rank, item in best.values()]
+
         # Une seule question pour tous les bulletins déjà importés (un zip peut en contenir 12).
         existing_months = [
             _month_label(d.period_start) for _p, d in parsed

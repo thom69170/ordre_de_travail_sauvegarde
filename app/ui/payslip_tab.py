@@ -3,6 +3,7 @@ prépaie (jamais recalculées par l'app - voir app/payslip_parser.py)."""
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tkinter as tk
@@ -28,6 +29,36 @@ def _fmt_date(iso: str) -> str:
         return date.fromisoformat(iso).strftime("%d/%m/%Y")
     except ValueError:
         return iso
+
+
+def _generated_on(path: Path) -> tuple[int, int, int]:
+    """Date de génération lue dans le nom du fichier ("...-genere-le-09102026.pdf"), sinon zéros."""
+    match = re.search(r"genere-le-(\d{2})(\d{2})(\d{4})", path.name)
+    return (int(match.group(3)), int(match.group(2)), int(match.group(1))) if match else (0, 0, 0)
+
+
+def _keep_best_per_period(parsed: list) -> tuple[list, list[str]]:
+    """Une même période peut figurer plusieurs fois (ex: un brouillon généré en cours de mois puis
+    la version finale) : on garde la plus complète (celle qui a un récapitulatif), puis la plus
+    récemment générée, et on signale les autres."""
+    best: dict[str, tuple] = {}
+    for item in parsed:
+        path, result = item
+        rank = (1 if result.recap else 0, len(result.recap) + len(result.compteurs),
+                _generated_on(path), path.stat().st_size if path.exists() else 0)
+        current = best.get(result.period_start)
+        if current is None or rank > current[0]:
+            best[result.period_start] = (rank, item)
+    kept = [best[r.period_start][1] for _p, r in parsed if best[r.period_start][1][0] is _p]
+    messages = []
+    for path, result in parsed:
+        winner = best[result.period_start][1][0]
+        if winner is not path:
+            messages.append(
+                f"{_fmt_date(result.period_start)} : « {path.name} » ignoré (« {winner.name} » est "
+                "plus complet ou plus récent pour la même période)."
+            )
+    return kept, messages
 
 
 def _parse_date(text: str) -> str:
@@ -191,6 +222,21 @@ class PayslipTab(ttk.Frame):
                 messages.append(f"{path.name} : période de la feuille de prépaie introuvable.")
                 continue
             parsed.append((path, result))
+
+        parsed, duplicate_messages = _keep_best_per_period(parsed)
+        messages += duplicate_messages
+        # Un document sans récapitulatif (brouillon) ne remplace jamais un relevé déjà détaillé.
+        complete = []
+        for path, result in parsed:
+            existing = db.get_payslip_by_period(result.period_start)
+            if not result.recap and existing is not None and '"recap"' in (existing.details_json or ""):
+                messages.append(
+                    f"{_fmt_date(result.period_start)} : « {path.name} » ignoré (sans récapitulatif, "
+                    "le relevé déjà importé est plus complet)."
+                )
+                continue
+            complete.append((path, result))
+        parsed = complete
 
         existing_periods = [
             _fmt_date(r.period_start) for _p, r in parsed

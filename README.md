@@ -133,12 +133,16 @@ statistiques par semaine / mois / année.
    les chiffres sont recopiés tels quels, jamais recalculés : net payé et date de paiement,
    salaire brut, net fiscal, heures déclarées, et le détail complet ligne par ligne (bouton
    **Voir le détail...**). Deux recoupements signalent une lecture douteuse : la somme des
-   éléments de brut doit donner le salaire brut, et le net à payer du tableau doit égaler le
-   montant payé indiqué en bas. Le bouton **Comparer à la feuille de prépaie...** rapproche les
+   éléments de brut doit donner le salaire brut, et le net à payer du tableau (moins le
+   prélèvement à la source) doit égaler le montant payé indiqué en bas. Le bouton **Comparer à la feuille de prépaie...** rapproche les
    éléments variables payés sur le bulletin (heures indemnisées, prime de modification de
-   service, prime urbain, repas unique, indemnité spéciale) de ceux annoncés par la feuille de
-   prépaie du **mois précédent** (le bulletin d'août paie les éléments de juillet). Les heures
-   supplémentaires ne sont pas encore comparées. Les bulletins sont inclus dans la sauvegarde.
+   service, prime urbain, repas unique, heures supplémentaires à 150 %) de ceux annoncés par la
+   feuille de prépaie du **mois précédent** (le bulletin d'août paie les éléments de juillet).
+   Quand la ligne « HS 150% » du mois manque sur la feuille de prépaie, les heures sont déduites
+   de la hausse du cumul annuel (et l'écran le précise). Si un même mois figure deux fois
+   (ex: un brouillon de feuille de prépaie généré en cours de mois puis la version finale), la
+   version la plus complète ou la plus récente est gardée. Les bulletins sont inclus dans la
+   sauvegarde.
 7. Onglet **Paramètres** (facultatif) : permet de configurer une clé API Gemini (Google) pour
    remplacer l'OCR local par une lecture beaucoup plus fiable par IA — tutoriel complet dans
    l'onglet, avec le lien pour générer une clé gratuite. Avec une clé, la lecture passe
