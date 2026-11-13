@@ -345,6 +345,8 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
 - `app/gemini_engine.py` — extraction équivalente via l'API Gemini (si une clé est configurée)
 - `app/extraction.py` — choisit Gemini ou Tesseract, avec repli automatique sur Tesseract
 - `app/config.py` — configuration locale (clé API Gemini)
+- `app/ui/fast_theme.py` — accélère le thème sv-ttk (mêmes images, agrandies au chargement :
+  changements d'onglet et redimensionnements 2 à 4 fois plus rapides, apparence identique)
 - `app/ui/tray.py` / `app/single_instance.py` / `app/autostart.py` — veille à côté de l'horloge,
   une seule copie de l'app, lancement au démarrage de Windows
 - `app/mail_import.py` — réception des OT par e-mail (IMAP, filtre sur l'expéditeur, décision

@@ -2,4 +2,4 @@
 
 À incrémenter à chaque changement publié sur GitHub qui mérite d'être proposé aux utilisateurs.
 """
-VERSION = "2.7.0"
+VERSION = "2.7.1"

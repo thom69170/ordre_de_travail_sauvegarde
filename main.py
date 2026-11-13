@@ -89,7 +89,12 @@ def main() -> int:
     try:
         import sv_ttk
 
-        sv_ttk.set_theme("light")
+        from app.ui import fast_theme
+
+        # Même apparence, mais images du thème agrandies au chargement : affichage 2 à 4 fois
+        # plus rapide (voir app/ui/fast_theme.py).
+        with fast_theme.accelerated(root):
+            sv_ttk.set_theme("light")
         if sys.platform == "win32":
             try:
                 import pywinstyles
