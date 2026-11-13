@@ -55,6 +55,14 @@ def _install_error_dialog(root: tk.Tk) -> None:
 
 
 def main() -> int:
+    # Une seule copie à la fois : sinon deux copies relèveraient la même boîte mail. La 2e copie
+    # demande à la 1re (peut-être en veille à côté de l'horloge) de s'afficher, puis se ferme.
+    from app.single_instance import SingleInstance
+
+    single = SingleInstance()
+    if not single.acquire():
+        return 0
+
     db.init_db()
     ocr_engine.configure()
 
@@ -95,7 +103,9 @@ def main() -> int:
         except tk.TclError:
             pass
 
-    window = MainWindow(root)
+    window = MainWindow(root, single)
+    if "--tray" in sys.argv and window.tray.active:
+        root.withdraw()  # lancé au démarrage de Windows : directement en veille à côté de l'horloge
     _check_for_update_in_background(root, window)
     _refresh_old_trajets_in_background(root, window)
     root.mainloop()

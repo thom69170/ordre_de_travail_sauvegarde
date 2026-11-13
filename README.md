@@ -89,6 +89,18 @@ statistiques par semaine / mois / année.
      lues. Le mot de passe est stocké en clair dans `config.json`, comme la clé Gemini, et n'est pas
      inclus dans les sauvegardes. Le code est dans `app/mail_import.py` (IMAP, filtrage, décision
      d'enregistrement automatique) et `app/ui/mail_watcher.py` (relève périodique).
+   - **Veille à côté de l'horloge** : quand la réception par e-mail est active, **fermer la
+     fenêtre (croix) ne quitte plus l'app** : elle se cache (plus de bouton dans la barre des
+     tâches) et continue de relever la boîte ; une notification Windows signale les OT reçus.
+     Clic sur l'icône = rouvrir ; clic droit = *Ouvrir* / *Relever la boîte maintenant* /
+     **Quitter** (seule façon de la fermer vraiment). Sous Windows 11, la première fois, l'icône
+     peut se cacher sous la flèche « ^ » : la faire glisser dans la barre pour la garder visible.
+     Deux cases dans les Paramètres : garder la veille à la fermeture (cochée par défaut) et
+     **lancer l'app au démarrage de Windows**, directement en veille (clé `Run` de l'utilisateur,
+     sans droits administrateur ; décocher la retire). Relancer l'app alors qu'elle est en veille
+     la ré-affiche au lieu d'ouvrir une 2e copie (`app/single_instance.py`) : deux copies
+     relèveraient la même boîte en parallèle. Nécessite le module `pystray` (installé
+     automatiquement par `Ordres de travail.bat`).
    - **Numéro de ligne** : chaque trajet peut être associé à un numéro de ligne (ex: "164 —
      CHARMILLES / TARARE GARE") — pratique quand tu fais plusieurs lignes différentes le même
      jour. Avec Gemini configuré, il est détecté automatiquement (lu depuis le code de service
@@ -325,6 +337,8 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
 - `app/gemini_engine.py` — extraction équivalente via l'API Gemini (si une clé est configurée)
 - `app/extraction.py` — choisit Gemini ou Tesseract, avec repli automatique sur Tesseract
 - `app/config.py` — configuration locale (clé API Gemini)
+- `app/ui/tray.py` / `app/single_instance.py` / `app/autostart.py` — veille à côté de l'horloge,
+  une seule copie de l'app, lancement au démarrage de Windows
 - `app/mail_import.py` — réception des OT par e-mail (IMAP, filtre sur l'expéditeur, décision
   d'enregistrement automatique ou de relecture)
 - `app/version.py` / `app/updater.py` — numéro de version et vérification/installation des

@@ -6,7 +6,7 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox, ttk
 
-from app import mail_import
+from app import autostart, mail_import
 from app.ui.common import ACCENT, ERROR_FG, SUCCESS, TEXT_MUTED
 
 
@@ -87,6 +87,26 @@ class MailSettingsFrame(ttk.LabelFrame):
         ttk.Spinbox(interval_row, from_=1, to=120, width=5, textvariable=self.interval_var).pack(side="left")
         ttk.Label(interval_row, text="minutes (uniquement quand l'application est ouverte)").pack(side="left", padx=6)
 
+        from app.ui.tray import pystray_available
+
+        self.tray_var = tk.BooleanVar(value=True)
+        self.autostart_var = tk.BooleanVar()
+        ttk.Checkbutton(
+            self, variable=self.tray_var, state="normal" if pystray_available() else "disabled",
+            text="Garder l'application en veille à côté de l'horloge quand je ferme la fenêtre "
+                 "(pas de bouton dans la barre des tâches ; clic droit sur l'icône → Quitter pour la fermer)",
+        ).pack(anchor="w", pady=(8, 0))
+        ttk.Checkbutton(
+            self, variable=self.autostart_var,
+            text="Lancer l'application au démarrage de Windows, directement en veille à côté de l'horloge",
+        ).pack(anchor="w", pady=(4, 0))
+        if not pystray_available():
+            ttk.Label(
+                self, foreground=ERROR_FG, wraplength=780,
+                text="La veille à côté de l'horloge nécessite le module « pystray » : relance l'application "
+                     "avec « Ordres de travail.bat » pour qu'il s'installe.",
+            ).pack(anchor="w")
+
         buttons = ttk.Frame(self)
         buttons.pack(fill="x", pady=(10, 0))
         self.save_btn = ttk.Button(buttons, text="Enregistrer", command=self._save)
@@ -125,6 +145,8 @@ class MailSettingsFrame(ttk.LabelFrame):
         self.port_var.set(str(s["port"]))
         self.senders_var.set(", ".join(s["allowed_senders"]))
         self.interval_var.set(str(s["interval_minutes"]))
+        self.tray_var.set(bool(s.get("tray", True)))
+        self.autostart_var.set(autostart.is_enabled())
         self._refresh_log()
 
     def _collect(self) -> dict:
@@ -141,7 +163,7 @@ class MailSettingsFrame(ttk.LabelFrame):
             enabled=self.enabled_var.get(), address=self.address_var.get().strip(),
             password=self.password_var.get(), host=self.host_var.get().strip(), port=port,
             allowed_senders=mail_import.parse_senders(self.senders_var.get()),
-            interval_minutes=max(1, min(interval, 120)),
+            interval_minutes=max(1, min(interval, 120)), tray=self.tray_var.get(),
         )
         return s
 
@@ -182,7 +204,15 @@ class MailSettingsFrame(ttk.LabelFrame):
                 self._say(problem, ERROR_FG)
                 return False
         mail_import.save_settings(s)
+        try:
+            autostart.set_enabled(self.autostart_var.get())
+        except OSError as exc:
+            self._say(f"Réglages enregistrés, mais le lancement au démarrage de Windows a échoué : {exc}", ERROR_FG)
+            self.app.mail_watcher.reconfigure(first_delay_ms=500)
+            self.app.tray.refresh()
+            return True
         self.app.mail_watcher.reconfigure(first_delay_ms=500)
+        self.app.tray.refresh()
         if not quiet:
             self._say("✓ Réglages enregistrés." + (
                 " La boîte sera relevée dans un instant, puis toutes les "

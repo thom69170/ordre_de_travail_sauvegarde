@@ -131,6 +131,7 @@ class MailWatcher:
             parts.append(f"{len(retry)} à réessayer")
         summary = " · ".join(parts)
 
+        previous_error = self._last_error
         if error:
             if error != self._last_error:
                 mail_import.log_event(error, "error")
@@ -142,6 +143,10 @@ class MailWatcher:
                 self.app.set_mail_status(f"✉ {datetime.now():%H:%M} — {summary}", alert=bool(review))
             elif self.app.mail_status_is_error():
                 self.app.set_mail_status("")
+        if self.app.tray.is_hidden() and (summary or (error and error != previous_error)):
+            self.app.tray.notify(summary or error)
+        if summary:
+            self.app.tray.set_tooltip(f"Ordres de travail — {summary}")
         if on_done:
             text = summary or ("Aucun nouvel ordre de travail." + (f" ({ignored} message(s) ignoré(s))" if ignored else ""))
             on_done(text, error)

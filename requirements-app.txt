@@ -4,3 +4,4 @@ pytesseract
 sv-ttk
 pywinstyles
 qrcode
+pystray

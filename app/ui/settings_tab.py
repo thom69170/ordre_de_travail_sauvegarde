@@ -350,4 +350,5 @@ class SettingsTab(ttk.Frame):
             "Mise à jour prête",
             "Mise à jour téléchargée. L'application va redémarrer pour l'appliquer.",
         )
+        self.app.tray.stop()  # sinon l'icône reste affichée, fantôme, après la fermeture
         updater.restart_application()

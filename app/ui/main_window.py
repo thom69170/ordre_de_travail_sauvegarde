@@ -16,7 +16,7 @@ APP_TITLE = "Ordres de travail"
 
 
 class MainWindow(ttk.Frame):
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, single=None):
         super().__init__(root)
         self.root = root
         self.pack(fill="both", expand=True)
@@ -55,6 +55,14 @@ class MainWindow(ttk.Frame):
 
         self.mail_watcher = MailWatcher(self)
         self.mail_watcher.start()
+
+        # Veille à côté de l'horloge : fermer la fenêtre la cache (si la réception par e-mail est
+        # active) au lieu de quitter ; voir app/ui/tray.py. single : verrou "une seule copie".
+        from app.ui.tray import TrayController
+
+        self.tray = TrayController(self, single)
+        self.tray.refresh()
+        root.protocol("WM_DELETE_WINDOW", self.tray.on_close)
 
     def set_mail_status(self, text: str, alert: bool = False) -> None:
         from app.ui.common import SUCCESS, WARN_BG, WARN_FG

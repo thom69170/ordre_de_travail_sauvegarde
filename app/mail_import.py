@@ -68,6 +68,7 @@ def default_settings() -> dict:
     return {
         "enabled": False, "address": "", "password": "", "host": "", "port": 993, "ssl": True,
         "folder": "INBOX", "allowed_senders": [], "interval_minutes": DEFAULT_INTERVAL_MINUTES,
+        "tray": True,  # fermer la fenêtre = veille à côté de l'horloge (seulement si la réception est active)
     }
 
 
