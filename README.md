@@ -128,6 +128,11 @@ statistiques par semaine / mois / année.
      n'est calculé, et le nombre de repas apparaît dans l'Historique, les Statistiques, l'export
      et le contrôle de paie (comparé à « Repas unique » + « Indemnité spéciale »).
 3. Onglet **Historique** : liste de tous les jours enregistrés, avec modification/suppression.
+   Le tableau (jour de la semaine, temps de travail, amplitude, TPS, km, repas, dernière minute,
+   résumé des trajets « 8 trajets · lignes 237, 164 ») se trie en cliquant sur un en-tête et
+   ses colonnes s'adaptent à la largeur de la fenêtre ; à droite, le **détail du jour**
+   sélectionné affiche tous ses chiffres, la liste complète de ses trajets dans l'ordre et ses
+   notes. La colonne Conducteur n'apparaît que si la liste contient plusieurs conducteurs.
    Le bouton **Exporter la liste (Excel)...** enregistre les jours affichés (selon le filtre
    année/mois) dans un fichier `.csv` qui s'ouvre directement dans Excel : une ligne par jour
    avec tous les champs, plus une ligne TOTAL.
