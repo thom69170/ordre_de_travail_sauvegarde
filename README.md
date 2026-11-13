@@ -131,8 +131,16 @@ statistiques par semaine / mois / année.
    Le bouton **Exporter la liste (Excel)...** enregistre les jours affichés (selon le filtre
    année/mois) dans un fichier `.csv` qui s'ouvre directement dans Excel : une ligne par jour
    avec tous les champs, plus une ligne TOTAL.
-4. Onglet **Statistiques** : temps de travail total par semaine/mois/année, et classement des
-   trajets/lignes les plus fréquents.
+4. Onglet **Statistiques** : choisis une période (**Semaine / Mois / Année / Tout**) et fais-la
+   défiler avec ◀ ▶ (**Aujourd'hui** revient à la période en cours) pour consulter n'importe
+   quel mois passé. Pour la période affichée : cinq chiffres clés (temps de travail et rappel de
+   la période précédente, moyenne par jour travaillé et journée la plus longue, amplitude
+   moyenne et maximale, kilomètres, repas et changements de dernière minute), un **graphique du
+   temps de travail jour par jour** (mois par mois pour Année et Tout) avec la moyenne en
+   pointillé et le détail du jour au survol, le classement des **trajets ou des lignes** les plus
+   fréquents (libellés entiers), et un **tableau de détail** semaine par semaine, mois par mois
+   ou année par année. Un clic sur une ligne du tableau, ou sur un mois du graphique, affiche
+   cette période.
 5. Onglet **Heures sup.** : suivi des heures supplémentaires (25 %/50 %) relevées sur tes
    **feuilles de prépaie** (le rapport d'activité RNA ; le bulletin de paie officiel, lui, va
    dans l'onglet **Bulletins de paie** - un fichier choisi dans le mauvais onglet est renvoyé
