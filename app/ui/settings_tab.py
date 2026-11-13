@@ -67,6 +67,11 @@ class SettingsTab(ttk.Frame):
             backup_btn_row, text="Restaurer une sauvegarde...", command=self._restore_backup
         ).pack(side="left", padx=8)
 
+        from app.ui.mail_settings import MailSettingsFrame
+
+        self.mail_frame = MailSettingsFrame(form, self.app)
+        self.mail_frame.pack(fill="x", padx=14, pady=(0, 14))
+
         contact_frame = ttk.LabelFrame(form, text="Contact / Support", padding=14)
         contact_frame.pack(fill="x", padx=14, pady=(0, 14))
         ttk.Label(

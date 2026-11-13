@@ -43,10 +43,11 @@ class _PhoneGroup(list):
     il envoie (expected) : l'analyse ne démarre qu'une fois toutes arrivées, pour ne pas payer
     une analyse inutile sur la 1re page seule avant que la 2e n'arrive."""
 
-    def __init__(self, first: Path, expected: int = 1):
+    def __init__(self, first: Path, expected: int = 1, label: str = " (reçu du téléphone)"):
         super().__init__([first])
         self.expected = max(1, expected)
         self.created = time.monotonic()
+        self.label = label  # affiché à côté du nom de fichier quand le document est chargé
 
     def is_complete(self) -> bool:
         return (
@@ -397,7 +398,18 @@ class ImportTab(ttk.Frame):
             return
         group = self._phone_queue.pop(0)
         self._update_queue_label()
-        self._load_document(group, " (reçu du téléphone)")
+        self._load_document(group, group.label)
+
+    def receive_from_mail(self, paths: list[Path], extraction=None):
+        """Un OT reçu par e-mail que l'enregistrement automatique n'a pas voulu valider seul : il
+        rejoint la file de relecture, avec la lecture déjà faite (pas de seconde analyse)."""
+        group = _PhoneGroup(paths[0], len(paths), " (reçu par e-mail)")
+        group.extend(paths[1:])
+        if extraction is not None:
+            self._analysis_cache[tuple(group)] = extraction
+        self._phone_queue.append(group)
+        self._maybe_start_next_from_queue()
+        self._start_prefetch_if_idle()
 
     def _retry_start(self):
         self._start_retry_scheduled = False
@@ -410,7 +422,7 @@ class ImportTab(ttk.Frame):
             self.queue_label.config(text="")
             return
         ready = sum(1 for g in self._phone_queue if tuple(g) in self._analysis_cache)
-        text = f"+{n} en attente (envoyé{'s' if n != 1 else ''} depuis le téléphone"
+        text = f"+{n} en attente (reçu{'s' if n != 1 else ''} par téléphone ou e-mail"
         text += f", {ready} déjà analysé{'s' if ready != 1 else ''})" if ready else ")"
         self.queue_label.config(text=text)
 

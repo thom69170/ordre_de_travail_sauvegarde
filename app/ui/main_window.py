@@ -24,6 +24,12 @@ class MainWindow(ttk.Frame):
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
 
+        # Bandeau du bas, visible seulement quand la réception par e-mail a quelque chose à dire
+        # (OT enregistrés, OT à relire, erreur de connexion) ; un clic ouvre l'onglet Importer.
+        self.mail_status = tk.Label(self, text="", anchor="w", padx=12, pady=5, cursor="hand2")
+        self.mail_status.bind("<Button-1>", lambda _e: self.select_tab("import"))
+        self._mail_status_alert = False
+
         self.import_tab = ImportTab(self.notebook, self)
         self.history_tab = HistoryTab(self.notebook, self)
         self.stats_tab = StatsTab(self.notebook, self)
@@ -43,6 +49,28 @@ class MainWindow(ttk.Frame):
             "stats": self.stats_tab, "payslip": self.payslip_tab,
             "bulletin": self.bulletin_tab, "settings": self.settings_tab,
         }
+
+        # Réception des OT par e-mail (option, désactivée par défaut : ne fait rien sans réglages).
+        from app.ui.mail_watcher import MailWatcher
+
+        self.mail_watcher = MailWatcher(self)
+        self.mail_watcher.start()
+
+    def set_mail_status(self, text: str, alert: bool = False) -> None:
+        from app.ui.common import SUCCESS, WARN_BG, WARN_FG
+
+        self._mail_status_alert = alert
+        if not text:
+            self.mail_status.pack_forget()
+            return
+        # alerte = quelque chose à faire ou un problème ; sinon simple information
+        bg, fg = (WARN_BG, WARN_FG) if alert else ("#e8f5e9", SUCCESS)
+        self.mail_status.config(text=text, bg=bg, fg=fg)
+        if not self.mail_status.winfo_ismapped():
+            self.mail_status.pack(side="bottom", fill="x", before=self.notebook)
+
+    def mail_status_is_error(self) -> bool:
+        return self._mail_status_alert
 
     def select_tab(self, name: str):
         widget = self._tab_ids.get(name)

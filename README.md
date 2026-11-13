@@ -72,6 +72,23 @@ statistiques par semaine / mois / année.
      l'avance, un par un, pendant que tu relis le courant** : ils s'affichent donc instantanément
      quand leur tour arrive. Le bouton **Recevoir depuis le téléphone...** reste utilisable
      pendant une analyse (il remet la fenêtre du QR code au premier plan).
+   - **Envoyer les photos par e-mail** (option, désactivée par défaut) : Paramètres → *Réception
+     des ordres de travail par e-mail*. Crée une boîte mail **réservée à cet usage**, renseigne son
+     adresse, son mot de passe d'application, le serveur IMAP (proposé d'après l'adresse) et **ta
+     propre adresse comme expéditeur autorisé** (les e-mails de toute autre adresse sont ignorés,
+     tout comme ceux dont l'expéditeur n'est pas authentifié par le serveur de réception). Ensuite,
+     envoie la photo de l'OT à cette boîte (plusieurs pages = plusieurs pièces jointes du même
+     e-mail ; un e-mail = un OT) : tant que l'app est ouverte, elle relève la boîte toutes les N
+     minutes (et une fois au démarrage, pour récupérer ce qui est arrivé app fermée), lit l'OT avec
+     Gemini et **l'enregistre toute seule** quand la lecture est nette. Si quoi que ce soit est
+     douteux (avertissement de lecture, date illisible, pause repas ambiguë, OT déjà enregistré à
+     cette date, pas de clé Gemini...), l'OT rejoint la file de l'onglet Importer **déjà lu**, pour
+     relecture. Un bandeau en bas de la fenêtre résume ce qui vient d'arriver (clic = onglet
+     Importer) et les Paramètres gardent le journal des dernières activités. Les e-mails sont
+     marqués lus mais **jamais supprimés ni déplacés** ; les photos HEIC (iPhone) ne sont pas
+     lues. Le mot de passe est stocké en clair dans `config.json`, comme la clé Gemini, et n'est pas
+     inclus dans les sauvegardes. Le code est dans `app/mail_import.py` (IMAP, filtrage, décision
+     d'enregistrement automatique) et `app/ui/mail_watcher.py` (relève périodique).
    - **Numéro de ligne** : chaque trajet peut être associé à un numéro de ligne (ex: "164 —
      CHARMILLES / TARARE GARE") — pratique quand tu fais plusieurs lignes différentes le même
      jour. Avec Gemini configuré, il est détecté automatiquement (lu depuis le code de service
@@ -308,6 +325,8 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
 - `app/gemini_engine.py` — extraction équivalente via l'API Gemini (si une clé est configurée)
 - `app/extraction.py` — choisit Gemini ou Tesseract, avec repli automatique sur Tesseract
 - `app/config.py` — configuration locale (clé API Gemini)
+- `app/mail_import.py` — réception des OT par e-mail (IMAP, filtre sur l'expéditeur, décision
+  d'enregistrement automatique ou de relecture)
 - `app/version.py` / `app/updater.py` — numéro de version et vérification/installation des
   mises à jour depuis GitHub
 - `app/stats.py` — agrégations semaine/mois/année, classement des trajets
