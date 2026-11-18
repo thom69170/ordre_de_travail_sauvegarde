@@ -76,7 +76,41 @@ def _finish(line: CheckLine, tolerance: float, less_msg: str, more_msg: str) -> 
     return line
 
 
+def _has_recap(payslip: Payslip) -> bool:
+    try:
+        return bool((json.loads(payslip.details_json) if payslip.details_json else {}).get("recap"))
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
+def with_details(payslip: Payslip) -> Payslip:
+    """Une feuille de prépaie importée avec une ancienne version n'a pas son détail enregistré,
+    mais son PDF est conservé : on le relit et on complète le relevé (seul le détail est ajouté,
+    jamais les chiffres déjà enregistrés). Retourne le relevé inchangé si ce n'est pas possible
+    (saisie manuelle, PDF absent ou sans récapitulatif)."""
+    if _has_recap(payslip) or not payslip.source_filename or payslip.id is None:
+        return payslip
+    try:
+        from app import storage
+        from app.payslip_parser import extract_payslip
+
+        path = storage.resolve_payslip_path(payslip.source_filename)
+        if not path.exists() or path.suffix.lower() != ".pdf":
+            return payslip
+        parsed = extract_payslip(path)
+        if not parsed.recap:
+            return payslip
+        payslip.details_json = json.dumps(
+            {"recap": parsed.recap, "compteurs": parsed.compteurs}, ensure_ascii=False
+        )
+        db.update_payslip(payslip)
+    except Exception:  # noqa: BLE001 - la réparation est facultative : au pire, message habituel
+        return payslip
+    return payslip
+
+
 def check_payslip(payslip: Payslip) -> PayrollCheck:
+    payslip = with_details(payslip)
     check = PayrollCheck(period_start=payslip.period_start, period_end=payslip.period_end)
     try:
         details = json.loads(payslip.details_json) if payslip.details_json else {}
@@ -234,6 +268,7 @@ def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
             "importe-la pour pouvoir comparer."
         )
         return check
+    prepaie = with_details(prepaie)
     check.period_end = prepaie.period_end
     try:
         recap = (json.loads(prepaie.details_json) if prepaie.details_json else {}).get("recap") or {}
@@ -241,8 +276,8 @@ def check_bulletin(bulletin: Bulletin) -> PayrollCheck:
         recap = {}
     if not recap:
         check.notes.append(
-            "La feuille de prépaie du mois précédent ne contient pas son détail (import ancien) : "
-            "réimporte son PDF pour pouvoir comparer."
+            "La feuille de prépaie du mois précédent ne contient pas son détail et son PDF n'a pas pu "
+            "être relu (saisie manuelle ?) : réimporte son PDF pour pouvoir comparer."
         )
         return check
 

@@ -242,9 +242,15 @@ class PayslipTab(ttk.Frame):
             complete.append((path, result))
         parsed = complete
 
+        def _is_upgrade(result) -> bool:
+            """Le relevé déjà importé n'a pas son détail (brouillon, ancien import) et le nouveau
+            document l'a : le remplacer est sans risque, inutile de poser la question."""
+            old = db.get_payslip_by_period(result.period_start)
+            return bool(result.recap) and old is not None and '"recap"' not in (old.details_json or "")
+
         existing_periods = [
             _fmt_date(r.period_start) for _p, r in parsed
-            if db.get_payslip_by_period(r.period_start) is not None
+            if db.get_payslip_by_period(r.period_start) is not None and not _is_upgrade(r)
         ]
         replace_existing = True
         if existing_periods:
@@ -258,7 +264,7 @@ class PayslipTab(ttk.Frame):
         for path, result in parsed:
             existing = db.get_payslip_by_period(result.period_start)
             if existing is not None:
-                if not replace_existing:
+                if not replace_existing and not _is_upgrade(result):
                     continue
                 if existing.source_filename:
                     storage.delete_payslip_file(existing.source_filename)
