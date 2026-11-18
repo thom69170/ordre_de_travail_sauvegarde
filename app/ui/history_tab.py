@@ -286,22 +286,19 @@ class HistoryTab(ttk.Frame):
         if self.year_var.get() not in self.year_combo["values"]:
             self.year_var.set("Toutes")
 
-        start_date = end_date = None
-        if self.year_var.get() != "Toutes":
-            year = self.year_var.get()
-            if self.month_var.get() != ALL_MONTHS:
-                month = FRENCH_MONTHS.index(self.month_var.get()) + 1
-                start_date = f"{year}-{month:02d}-01"
-                end_date = f"{year}-{month:02d}-31"
-            else:
-                start_date = f"{year}-01-01"
-                end_date = f"{year}-12-31"
-
         previous_selection = self._selected_id()
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        orders = db.list_work_orders(start_date, end_date)
+        # Filtres Année et Mois, indépendants : « Novembre » seul = ce mois de toutes les années.
+        year = self.year_var.get()
+        month = self.month_var.get()
+        month_number = f"{FRENCH_MONTHS.index(month) + 1:02d}" if month != ALL_MONTHS else ""
+        orders = [
+            wo for wo in all_orders
+            if (year == "Toutes" or wo.date[:4] == year)
+            and (not month_number or wo.date[5:7] == month_number)
+        ]
         orders.sort(key=lambda wo: wo.date, reverse=True)  # à égalité : le plus récent d'abord
         orders.sort(key=self._sort_key, reverse=self._sort_reverse)
         self._orders = orders
