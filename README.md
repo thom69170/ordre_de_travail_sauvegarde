@@ -181,6 +181,12 @@ statistiques par semaine / mois / année.
    **Photos reçues du téléphone** : les photos d'un même envoi (les 2 pages d'un bulletin) sont
    lues ensemble ; une page envoyée plus tard, seule, **complète le bulletin déjà importé** de ce
    mois au lieu de le remplacer (page 2 après la page 1, ou l'inverse), sans question.
+   **Photos prises de loin ou sur un bureau** : l'app recadre automatiquement sur la feuille avant de
+   la lire. La période d'un bulletin (mois et année, minuscules sur une photo) est lue à part, sur un
+   en-tête très agrandi, puis recoupée avec la date de paiement ; deux pages envoyées ensemble sont
+   réunies même si l'année d'une des deux a été mal lue (la date de paiement tranche), et une
+   page dont les contrôles échouent est relue une fois de plus. Cas réel à l'origine de ces
+   garde-fous : page 2 lue « octobre 2025 » au lieu de 2026, ce qui créait un faux bulletin.
    **Un bulletin compte deux pages** : photographie-les toutes les deux (la page 2 porte le net
    payé, le mode de paiement, les cumuls et le prélèvement à la source) et envoie-les ensemble ;
    les deux photos d'un même mois sont réunies automatiquement, dans n'importe quel ordre, en un

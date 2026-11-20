@@ -46,6 +46,7 @@ from app.payslip_parser import (
 KIND_BULLETIN = "bulletin"
 KIND_PREPAIE = "prepaie"
 
+MAX_READ_ATTEMPTS = 2  # lectures d'une page si ses contrôles internes échouent
 MAX_SIDE = 2600  # une photo de téléphone fait ~4000 px : inutile (et lourd) de l'envoyer entière
 PHOTO_NOTE = "Document lu depuis une photo par l'IA Gemini : vérifie les chiffres sur l'original."
 
@@ -214,6 +215,35 @@ def _api_key() -> str:
     return key
 
 
+def crop_to_document(page: Image.Image) -> Image.Image:
+    """Recadre une photo sur la feuille. Une photo prise de loin (feuille sur un bureau) laisse le
+    texte minuscule : une année d'en-tête de quelques pixels est mal lue. La feuille est blanche et
+    peu colorée, le bureau (bois, tissu...) ne l'est pas : on garde le rectangle englobant des pixels
+    clairs et peu saturés. Sans effet si la feuille remplit déjà l'image ou si la détection est douteuse."""
+    from PIL import ImageChops, ImageFilter
+
+    small = page.convert("RGB")
+    small.thumbnail((400, 400))
+    _hue, saturation, value = small.convert("HSV").split()
+    paper = ImageChops.multiply(
+        saturation.point(lambda x: 255 if x < 85 else 0), value.point(lambda x: 255 if x > 135 else 0)
+    )
+    paper = paper.filter(ImageFilter.MinFilter(5)).filter(ImageFilter.MaxFilter(5))  # retire les taches isolées
+    box = paper.getbbox()
+    if box is None:
+        return page
+    area = (box[2] - box[0]) * (box[3] - box[1]) / (small.width * small.height)
+    if area < 0.15 or area > 0.9:
+        return page  # détection douteuse (trop petite) ou rien à recadrer (feuille déjà pleine image)
+    scale = page.width / small.width
+    margin = 0.03 * max(box[2] - box[0], box[3] - box[1])
+    left = max(0, int((box[0] - margin) * scale))
+    top = max(0, int((box[1] - margin) * scale))
+    right = min(page.width, int((box[2] + margin) * scale))
+    bottom = min(page.height, int((box[3] + margin) * scale))
+    return page.crop((left, top, right, bottom))
+
+
 def skew_angle(page: Image.Image, limit: float = 6.0) -> float:
     """Inclinaison de la page en degrés (0 = droite), cherchée en maximisant le contraste des lignes
     de texte : sur une page bien droite, la luminosité moyenne de chaque ligne de pixels alterne
@@ -253,6 +283,7 @@ def _load_page(path: Path) -> Image.Image:
     page = pages[0]
     if ge._is_sideways(page):  # photo couchée : redressée d'un quart de tour (voir gemini_engine)
         page = page.rotate(-90, expand=True)
+    page = crop_to_document(page)
     if max(page.size) > MAX_SIDE:
         page = page.copy()
         page.thumbnail((MAX_SIDE, MAX_SIDE), Image.LANCZOS)
@@ -383,6 +414,7 @@ def bulletin_from_payload(payload: dict) -> BulletinData:
         if any(regex.search(normalize(label)) for regex in _used_patterns()) and not _coherent(quantity, rate, amount):
             suspect.append(label)
         data.lines.append(BulletinLine(section=section, label=label, quantity=quantity, rate=rate, amount=amount))
+    data.suspects = len(suspect)
     if suspect:
         data.warnings.append(
             "Quantité × valeur unitaire ≠ montant pour : " + ", ".join(suspect[:4])
@@ -393,14 +425,90 @@ def bulletin_from_payload(payload: dict) -> BulletinData:
     return data
 
 
+_PERIOD_PROMPT = """Photo agrandie de l'EN-TÊTE d'un bulletin de paie français. Lis la période du bulletin : « Mois de :
+MOIS ANNÉE » et « Salaire du JJ/MM/AAAA au JJ/MM/AAAA ». Recopie l'ANNÉE chiffre par chiffre, en
+t'appuyant sur les DEUX mentions (mois en toutes lettres et dates) : elles doivent concorder.
+period_start / period_end au format AAAA-MM-JJ ; chaîne vide si illisible."""
+
+_PERIOD_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {"period_start": {"type": "STRING"}, "period_end": {"type": "STRING"}},
+    "required": ["period_start", "period_end"],
+}
+
+
+def valid_period(start: str) -> bool:
+    """Une période plausible : une date réelle, pas dans le futur (un bulletin existe au plus un mois
+    avant la fin de sa période) ni avant 2000."""
+    from datetime import date, timedelta
+
+    try:
+        d = date.fromisoformat(start)
+    except ValueError:
+        return False
+    return d.year >= 2000 and d <= date.today() + timedelta(days=31)
+
+
+def _read_header_period(path: Path) -> tuple[str, str] | None:
+    """La période est la clé qui range un bulletin dans le temps (une année fausse peut écraser un autre
+    bulletin) : sur une photo, ces chiffres sont tout petits. L'en-tête est donc lu à part, découpé et
+    très agrandi."""
+    page = _load_page(path)
+    top = page.crop((0, 0, page.width, int(page.height * 0.30)))
+    if top.width < 2200:
+        top = top.resize((2200, int(top.height * 2200 / top.width)), Image.LANCZOS)
+    parts = [{"text": _PERIOD_PROMPT},
+             {"inline_data": {"mime_type": "image/png", "data": ge._image_to_png_b64(top)}}]
+    payload = _ask(parts, _PERIOD_SCHEMA, _api_key())
+    start, end = (payload.get("period_start") or "").strip(), (payload.get("period_end") or "").strip()
+    return (start, end) if valid_period(start) else None
+
+
+def _brut_gap(data: BulletinData) -> bool:
+    """La somme des éléments de revenu brut ne donne pas le salaire brut (page 1 seulement)."""
+    brut = [l for l in data.lines if l.section == SECTION_BRUT]
+    total_line = next((l for l in brut if normalize(l.label) == "salaire brut" and l.amount is not None), None)
+    if total_line is None:
+        return False
+    total = sum(l.amount for l in brut if l is not total_line and l.amount is not None)
+    return abs(total - total_line.amount) > 0.02
+
+
 def _read_bulletin(path: Path) -> BulletinData:
     """Lit UNE page. Les recoupements (somme du brut, net payé) ne se font qu'une fois les pages du
-    bulletin réunies : voir assemble_bulletin_photos."""
-    payload, uncertain = _read(path, _BULLETIN_PROMPT, _BULLETIN_SCHEMA)
-    data = bulletin_from_payload(payload)
+    bulletin réunies : voir assemble_bulletin_photos. Si la lecture échoue à ses contrôles internes
+    (somme du brut, quantité x valeur = montant), elle est refaite (une fois de plus) : une erreur de
+    chiffre est souvent aléatoire, et on garde la lecture la plus cohérente."""
+    best: tuple[int, dict, bool, BulletinData] | None = None
+    scores = []
+    for attempt in range(MAX_READ_ATTEMPTS):
+        payload, uncertain = _read(path, _BULLETIN_PROMPT, _BULLETIN_SCHEMA)
+        data = bulletin_from_payload(payload)
+        score = getattr(data, "suspects", 0) + (1 if _brut_gap(data) else 0)
+        scores.append(score)
+        if best is None or score < best[0]:
+            best = (score, payload, uncertain, data)
+        if score == 0:
+            break
+    _score, payload, uncertain, data = best
+
+    read_period = data.period_start
+    header = None
+    try:
+        header = _read_header_period(path)
+    except PhotoError:
+        pass  # la lecture de l'en-tête est un renfort, pas une obligation
+    if header is not None:
+        data.period_start, data.period_end = header
+    elif not valid_period(data.period_start):
+        data.warnings.append(
+            f"Période lue ({data.period_start or 'illisible'}) invraisemblable : vérifie le mois et l'année."
+        )
+    repair_period(data)
     diagnostics.record(
         "photo_read_bulletin", file=path.name, orientation_uncertain=uncertain, payload=payload,
-        parsed={"period": data.period_start, "lines": len(data.lines),
+        attempts=scores, header_period=header[0] if header else None,
+        parsed={"period": data.period_start, "period_read": read_period, "lines": len(data.lines),
                 "brut": sum(1 for l in data.lines if l.section == SECTION_BRUT),
                 "autres": sum(1 for l in data.lines if l.section == SECTION_AUTRES), "net_paye": data.net_paye,
                 "payment_date": data.payment_date, "cumuls": len(data.cumuls), "page_one": _is_page_one(data)},
@@ -540,6 +648,41 @@ def read_prepaie_photo(path: Path) -> PayslipData:
 
 # ----------------------------------------------------------------------------- bulletin sur deux pages
 
+def repair_period(data: BulletinData) -> bool:
+    """Corrige l'année (ou le mois) de la période quand elle est incompatible avec la date de paiement
+    lue : un bulletin est payé entre le début de sa période et environ un mois après sa fin. Exemple
+    réel : période lue « octobre 2025 » avec un paiement le 27/10/2026 -> c'est octobre 2026 (l'année,
+    toute petite sur la photo, était mal lue). Retourne True si la période a été corrigée."""
+    from calendar import monthrange
+    from datetime import date, timedelta
+
+    if not data.period_start or not data.payment_date:
+        return False
+    try:
+        start = date.fromisoformat(data.period_start)
+        paid = date.fromisoformat(data.payment_date)
+    except ValueError:
+        return False
+
+    def fits(s: date) -> bool:
+        end = date(s.year, s.month, monthrange(s.year, s.month)[1])
+        return s <= paid <= end + timedelta(days=40)
+
+    if fits(start):
+        return False
+    for year in (paid.year, paid.year - 1):  # même mois, autre année
+        candidate = date(year, start.month, 1)
+        if fits(candidate):
+            data.period_start = candidate.isoformat()
+            data.period_end = date(year, start.month, monthrange(year, start.month)[1]).isoformat()
+            data.warnings.append(
+                f"Période corrigée en {candidate:%m/%Y} d'après la date de paiement ({paid:%d/%m/%Y}) : "
+                "l'année de l'en-tête était mal lue sur la photo."
+            )
+            return True
+    return False
+
+
 def _is_page_one(data: BulletinData) -> bool:
     """La page 1 est celle dont le tableau des revenus bruts va jusqu'à la ligne SALAIRE BRUT."""
     return any(line.section == SECTION_BRUT and normalize(line.label) == "salaire brut" for line in data.lines)
@@ -678,6 +821,60 @@ def merge_with_existing(existing, path: Path, data: BulletinData):
     return combined, merged
 
 
+def _pair_orphan_pages(groups: dict[str, list[tuple[Path, BulletinData]]]) -> None:
+    """Deux photos envoyées ensemble : une page 1 sans pied de page et une page 2 sans revenus bruts, de
+    périodes différentes. Si c'est la seule paire possible et que les mois concordent (ou que la date de
+    paiement de la page 2 tombe dans la période de la page 1), la période de la page 2 a été mal lue :
+    on réunit les deux sous la période de la page 1."""
+    from datetime import date, timedelta
+
+    def has_brut(d): return any(l.section == SECTION_BRUT for l in d.lines)
+    def has_footer(d): return bool(d.cumuls) or bool(d.payment_date)
+
+    singles = [(key, g[0]) for key, g in groups.items() if len(g) == 1]
+    firsts = [(k, i) for k, i in singles if has_brut(i[1]) and not has_footer(i[1])]
+    seconds = [(k, i) for k, i in singles if not has_brut(i[1]) and has_footer(i[1])]
+    if len(firsts) != 1 or len(seconds) != 1:
+        return
+    (key1, (path1, data1)), (key2, (path2, data2)) = firsts[0], seconds[0]
+    if key1 == key2:
+        return
+    try:
+        month1 = date.fromisoformat(data1.period_start)
+        paid = date.fromisoformat(data2.payment_date) if data2.payment_date else None
+        month2 = date.fromisoformat(data2.period_start)
+    except ValueError:
+        return
+    same_month = month1.month == month2.month
+    paid_fits = paid is not None and month1 <= paid <= month1 + timedelta(days=70)
+    if not (same_month or paid_fits):
+        return
+
+    def fits(period: date) -> bool:
+        return paid is not None and period <= paid <= period + timedelta(days=75)
+
+    # Période retenue : celle des deux qui concorde avec la date de paiement (lue en bas de la page 2) ;
+    # à défaut, celle de la page 1, si elle est plausible.
+    if fits(month2) and not fits(month1):
+        chosen_start, chosen_end = data2.period_start, data2.period_end
+    elif valid_period(data1.period_start) or not valid_period(data2.period_start):
+        chosen_start, chosen_end = data1.period_start, data1.period_end
+    else:
+        chosen_start, chosen_end = data2.period_start, data2.period_end
+    data2.warnings.append(
+        f"Période de la page 2 ({data2.period_start[:7]}) différente de celle de la page 1 "
+        f"({data1.period_start[:7]}) : les deux pages ont été réunies car envoyées ensemble, période "
+        f"retenue {chosen_start[:7]}."
+    )
+    data1.period_start = data2.period_start = chosen_start
+    data1.period_end = data2.period_end = chosen_end
+    diagnostics.record("pages_paired_despite_period", page1=path1.name, page2=path2.name,
+                       period1=month1.isoformat(), period2=month2.isoformat(), chosen=chosen_start)
+    # Les deux pages forment un seul groupe, sous la période retenue.
+    page_one_item, page_two_item = groups.pop(key1)[0], groups.pop(key2)[0]
+    groups[chosen_start] = [page_one_item, page_two_item]
+
+
 def assemble_bulletin_photos(items: list[tuple[Path, BulletinData]]) -> list[tuple[Path, BulletinData]]:
     """Réunit les photos d'un même bulletin (même période : page 1 + page 2) en un seul bulletin,
     puis applique les recoupements du bulletin complet. Les PDF (déjà complets) passent tels quels.
@@ -687,6 +884,7 @@ def assemble_bulletin_photos(items: list[tuple[Path, BulletinData]]) -> list[tup
     for path, data in items:
         if is_image(path):
             groups.setdefault(data.period_start or f"?{path}", []).append((path, data))
+    _pair_orphan_pages(groups)
     for _period, group in groups.items():
         data = _merge_pages(group) if len(group) > 1 else group[0][1]
         path = group[0][0] if len(group) == 1 else combine_to_pdf(
