@@ -167,6 +167,25 @@ statistiques par semaine / mois / année.
    pré-remplies avant d'enregistrer. Comme dans l'onglet Importer, tu peux aussi envoyer le PDF
    depuis ton téléphone via le bouton **Recevoir depuis le téléphone...** (même Wi-Fi requis),
    en enchaînant plusieurs feuilles de prépaie à la suite avec le même QR code si besoin.
+   **Photos** : tout le monde n'a pas ces documents en PDF, bulletins de paie et feuilles de
+   prépaie peuvent aussi être **photographiés** (JPG, PNG... choisis sur le PC, ou pris avec
+   l'appareil photo depuis la page du téléphone). Une photo est lue par l'IA Gemini (**clé
+   requise** ; un PDF numérique reste lu sur ton PC, sans IA) : l'app reconnaît toute seule s'il
+   s'agit d'un bulletin ou d'une feuille de prépaie, redresse une photo penchée, couchée ou tête
+   en bas, puis reconstitue les mêmes données qu'un PDF (la comparaison bulletin / prépaie et le
+   contrôle de paie fonctionnent donc à l'identique). Fiabilité : dans le corps d'un bulletin les
+   nombres sont imprimés sans virgule, l'IA les recopie tels quels et c'est l'app qui place la
+   virgule d'après la colonne ; la somme des éléments de revenu brut est recoupée avec le salaire
+   brut, et quantité × valeur unitaire avec le montant sur les lignes utilisées par la comparaison :
+   en cas d'écart, un avertissement signale les lignes à vérifier (photo floue, doigt, reflet...).
+   Limites d'une photo de bulletin : seule la **page 1** est lue, et pas le détail des cotisations
+   ni les cumuls du pied de page (le net payé est alors calculé depuis le tableau). Une photo =
+   un document. **Confidentialité** : une photo de bulletin contient ton nom, ton adresse et ton
+   salaire et part chez Google ; l'app demande ton accord à la première photo, retirable dans
+   Paramètres. Mesuré sur 6 bulletins et 6 feuilles de prépaie réels photographiés artificiellement
+   (inclinaison, flou, éclairage inégal, compression) : 100 % des lignes de revenu brut, des
+   « autres éléments de paie » et du récapitulatif mensuel lues exactement ; une photo très floue
+   est signalée par les avertissements plutôt que lue de travers en silence.
    En plus des heures sup, la lecture récupère aussi tous les autres compteurs du document
    (jours travaillés, TTE, repos différés, RC nuit, cumuls annuels...) — accessibles via le
    bouton **Voir tous les détails...**. Le bouton **Contrôler avec mes OT...** compare la feuille
@@ -354,6 +373,8 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
   changements d'onglet et redimensionnements 2 à 4 fois plus rapides, apparence identique)
 - `app/ui/tray.py` / `app/single_instance.py` / `app/autostart.py` — veille à côté de l'horloge,
   une seule copie de l'app, lancement au démarrage de Windows
+- `app/payroll_vision.py` — lecture par l'IA d'un bulletin de paie ou d'une feuille de prépaie
+  photographiés (redressement, recoupements, mêmes structures que la lecture d'un PDF)
 - `app/mail_import.py` — réception des OT par e-mail (IMAP, filtre sur l'expéditeur, décision
   d'enregistrement automatique ou de relecture)
 - `app/version.py` / `app/updater.py` — numéro de version et vérification/installation des

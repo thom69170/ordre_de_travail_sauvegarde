@@ -39,6 +39,9 @@ _INTEGER_TOKEN = re.compile(r"^-?\d+$")
 _ABSENCE = re.compile(r"^[A-Z]{1,5} \d{2}/\d{2} au \d{2}/\d{2}")
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
 class BulletinError(Exception):
     pass
 
@@ -309,6 +312,10 @@ def find_line(data_lines: list[BulletinLine], pattern: str, section: str | None 
 
 
 def extract_bulletin(path: Path) -> BulletinData:
+    if path.suffix.lower() in IMAGE_SUFFIXES:
+        from app import payroll_vision  # photo : lue par l'IA (pas de texte à extraire)
+
+        return payroll_vision.read_bulletin_photo(path)
     pdf = _open(path)
     data = BulletinData()
     full_text = []
@@ -323,7 +330,13 @@ def extract_bulletin(path: Path) -> BulletinData:
     if "BULLETIN DE PAIE" not in text:
         raise BulletinError("Ce document n'est pas un bulletin de paie reconnu.")
     _parse_footer(text, data)
+    finalize_bulletin(data)
+    return data
 
+
+def finalize_bulletin(data: BulletinData) -> None:
+    """Recoupements de la lecture (somme du brut, net payé) et avertissements. Commun à la lecture
+    du PDF et à celle d'une photo."""
     if not data.period_start:
         data.warnings.append("Période du bulletin non trouvée.")
 
@@ -364,7 +377,6 @@ def extract_bulletin(path: Path) -> BulletinData:
         data.warnings.append("Montant net payé non trouvé.")
     if not data.lines:
         data.warnings.append("Aucune ligne du bulletin n'a pu être lue.")
-    return data
 
 
 def previous_month_start(period_start: str) -> str:

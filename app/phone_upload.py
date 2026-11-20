@@ -9,6 +9,7 @@ Le fichier est envoyé en corps de requête brut (pas en multipart) : c'est le t
 """
 from __future__ import annotations
 
+import json
 import secrets
 import socket
 import threading
@@ -62,6 +63,7 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
   <div id="status"></div>
 <script>
   const MULTI = __MULTI_JS__;
+  const TXT = __TXT_JS__;
   const inputs = Array.from(document.querySelectorAll('input[type=file]'));
   const sendBtn = document.getElementById('send');
   const status = document.getElementById('status');
@@ -82,7 +84,7 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
         row.appendChild(img);
       }
       const name = document.createElement('span');
-      name.textContent = MULTI ? ('Page ' + (i + 1) + ' : ' + (it.file.name || 'photo')) : (it.file.name || 'fichier');
+      name.textContent = MULTI ? (TXT.noun + ' ' + (i + 1) + ' : ' + (it.file.name || 'photo')) : (it.file.name || 'fichier');
       row.appendChild(name);
       const del = document.createElement('button');
       del.className = 'del';
@@ -97,11 +99,9 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
       list.appendChild(row);
     });
     sendBtn.disabled = items.length === 0;
-    sendBtn.textContent = items.length > 1 ? 'Envoyer les ' + items.length + ' pages au PC' : 'Envoyer au PC';
+    sendBtn.textContent = items.length > 1 ? TXT.sendMany.replace('{n}', items.length) : 'Envoyer au PC';
     countHint.style.display = (MULTI && items.length > 0) ? 'block' : 'none';
-    countHint.textContent = items.length > 1
-      ? 'Ces ' + items.length + ' pages seront envoyées ensemble comme UN SEUL ordre de travail.'
-      : "Pour un ordre de travail sur plusieurs pages, ajoute les autres pages avant d'envoyer.";
+    countHint.textContent = items.length > 1 ? TXT.hintMany.replace('{n}', items.length) : TXT.hintOne;
   }
 
   inputs.forEach(input => input.addEventListener('change', () => {
@@ -162,8 +162,22 @@ _UPLOAD_PAGE_TEMPLATE = """<!doctype html>
 </html>"""
 
 
+_TEXTS_PAGES = {
+    "noun": "Page", "sendMany": "Envoyer les {n} pages au PC",
+    "hintMany": "Ces {n} pages seront envoyées ensemble comme UN SEUL ordre de travail.",
+    "hintOne": "Pour un ordre de travail sur plusieurs pages, ajoute les autres pages avant d'envoyer.",
+}
+# Mode « documents » (bulletins, feuilles de prépaie) : chaque fichier est un document à part.
+_TEXTS_DOCUMENTS = {
+    "noun": "Document", "sendMany": "Envoyer les {n} documents au PC",
+    "hintMany": "Ces {n} documents seront envoyés séparément (une photo = un document).",
+    "hintOne": "Tu peux ajouter d'autres documents avant d'envoyer.",
+}
+
+
 def _build_upload_page(
-    title: str, instruction: str, choose_label: str, accept: str, capture: bool, multiple: bool
+    title: str, instruction: str, choose_label: str, accept: str, capture: bool, multiple: bool,
+    documents: bool = False,
 ) -> bytes:
     # Remplacement de texte simple plutôt que str.format() : le CSS/JS du template contient
     # beaucoup d'accolades littérales qu'il faudrait sinon toutes doubler (source d'un bug déjà
@@ -176,6 +190,7 @@ def _build_upload_page(
     html = html.replace("__CAPTURE_ATTR__", ' capture="environment"' if capture else "")
     html = html.replace("__MULTIPLE_ATTR__", "multiple" if multiple else "")
     html = html.replace("__MULTI_JS__", "true" if multiple else "false")
+    html = html.replace("__TXT_JS__", json.dumps(_TEXTS_DOCUMENTS if documents else _TEXTS_PAGES, ensure_ascii=False))
     # Un appareil photo (capture) ne permet de prendre qu'une photo à la fois et n'ouvre pas la
     # galerie : en plus, un second sélecteur sans "capture" pour ajouter des photos déjà prises.
     gallery = ""
@@ -213,6 +228,7 @@ class PhoneUploadServer:
         accept: str = "image/*,.pdf",
         capture: bool = True,
         multiple: bool = False,
+        documents: bool = False,
         allowed_suffixes: frozenset[str] = ALLOWED_SUFFIXES,
         default_suffix: str = ".jpg",
     ):
@@ -221,7 +237,7 @@ class PhoneUploadServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._page_body = _build_upload_page(
-            page_title, instruction, choose_label, accept, capture, multiple
+            page_title, instruction, choose_label, accept, capture, multiple, documents
         )
         self._allowed_suffixes = allowed_suffixes
         self._default_suffix = default_suffix

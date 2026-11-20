@@ -165,6 +165,15 @@ class SettingsTab(ttk.Frame):
         self.status_label = ttk.Label(key_frame, text="", wraplength=780, justify="left")
         self.status_label.pack(anchor="w", pady=(10, 0))
 
+        # Une photo de bulletin de paie contient des données personnelles : accord explicite,
+        # demandé à la première photo importée, retirable ici.
+        self.photos_var = tk.BooleanVar(value=bool(config.load_config().get("payroll_photos_ok")))
+        ttk.Checkbutton(
+            key_frame, variable=self.photos_var, command=self._save_photos_consent,
+            text="Autoriser l'envoi à Gemini des photos de bulletins de paie et de feuilles de prépaie "
+                 "(les PDF numériques sont toujours lus sur ce PC)",
+        ).pack(anchor="w", pady=(10, 0))
+
         ttk.Label(
             form,
             text="La clé est enregistrée localement en clair dans %LOCALAPPDATA%\\OrdreDeTravail\\config.json "
@@ -172,6 +181,14 @@ class SettingsTab(ttk.Frame):
                  "Gemini elle-même.",
             wraplength=780, justify="left", foreground="#666",
         ).pack(anchor="w", padx=14, pady=(0, 14))
+
+    def _save_photos_consent(self):
+        cfg = config.load_config()
+        if self.photos_var.get():
+            cfg["payroll_photos_ok"] = True
+        else:
+            cfg.pop("payroll_photos_ok", None)
+        config.save_config(cfg)
 
     def _toggle_visibility(self):
         self._shown = not self._shown

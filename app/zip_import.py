@@ -125,8 +125,12 @@ def expand_documents(paths: list[Path]) -> ExpandedDocuments:
 
 def classify(path: Path) -> str | None:
     """"bulletin" (bulletin de paie), "prepaie" (feuille de prépaie) ou None."""
+    from app import payroll_vision
     from app.bulletin_parser import is_bulletin
 
+    if payroll_vision.is_image(path):
+        # Photo : le type a été reconnu (par l'IA) quand elle a été lue, voir payroll_vision.prefetch.
+        return payroll_vision.cached_kind(path)
     if is_bulletin(path):
         return KIND_BULLETIN
     if path.suffix.lower() != ".pdf":

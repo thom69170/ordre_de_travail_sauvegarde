@@ -17,7 +17,7 @@ from app.payslip_parser import extract_payslip
 from app.ui.common import ACCENT, LabeledEntry, TEXT_MUTED, WARN_BG, WARN_FG, format_decimal
 
 FILE_TYPES = [
-    ("Feuilles de prépaie (PDF ou ZIP)", "*.pdf *.zip"),
+    ("Feuilles de prépaie (PDF, photo ou ZIP)", "*.pdf *.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *.zip"),
     ("Tous les fichiers", "*.*"),
 ]
 
@@ -188,7 +188,7 @@ class PayslipTab(ttk.Frame):
 
     def choose_file(self):
         paths = filedialog.askopenfilenames(
-            title="Choisir une feuille de prépaie (PDF ou fichier .zip)", filetypes=FILE_TYPES
+            title="Choisir une feuille de prépaie (PDF, photo ou fichier .zip)", filetypes=FILE_TYPES
         )
         if paths:
             self.app.import_documents([Path(p) for p in paths], "payslip")
@@ -305,13 +305,15 @@ class PayslipTab(ttk.Frame):
             waiting_text="En attente d'une feuille de prépaie... (tu peux en envoyer plusieurs à la suite)",
             received_noun="Fichier",
             page_title="Heures sup.",
-            instruction="Choisis le PDF de ta feuille de prépaie (ou un fichier .zip qui en contient "
-                        "plusieurs), puis envoie-le au PC.",
-            choose_label="Choisir un fichier PDF ou ZIP",
-            accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
-            capture=False,
-            allowed_suffixes=frozenset({".pdf", ".zip"}),
-            default_suffix=".pdf",
+            instruction="Prends en photo ta feuille de prépaie (à plat, en entier, bien éclairée), ou "
+                        "choisis un PDF ou un fichier .zip, puis envoie au PC.",
+            choose_label="Prendre une photo",
+            accept="image/*,.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
+            capture=True,
+            multiple=True,
+            documents=True,
+            allowed_suffixes=frozenset({".pdf", ".zip", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}),
+            default_suffix=".jpg",
         )
 
     def _receive_file_from_phone(self, path: Path, is_append: bool = False, batch_total: int = 1):

@@ -75,7 +75,14 @@ def _find_value(mapping: dict[str, float], pattern: re.Pattern) -> float:
     return 0.0
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
 def extract_payslip(path: Path) -> PayslipData:
+    if path.suffix.lower() in IMAGE_SUFFIXES:
+        from app import payroll_vision  # photo : lue par l'IA (pas de texte à extraire)
+
+        return payroll_vision.read_prepaie_photo(path)
     result = PayslipData()
     text = _extract_all_text(path)
 

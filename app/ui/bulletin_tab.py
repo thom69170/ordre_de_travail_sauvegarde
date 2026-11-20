@@ -28,7 +28,7 @@ from app.stats import FRENCH_MONTHS
 from app.ui.common import TEXT_MUTED, WARN_BG, WARN_FG, show_warnings
 
 FILE_TYPES = [
-    ("Bulletins de paie (PDF ou ZIP)", "*.pdf *.zip"),
+    ("Bulletins de paie (PDF, photo ou ZIP)", "*.pdf *.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *.zip"),
     ("Tous les fichiers", "*.*"),
 ]
 
@@ -96,9 +96,10 @@ class BulletinTab(ttk.Frame):
 
         ttk.Label(
             self,
-            text="Les chiffres sont recopiés tels quels du bulletin (lecture locale du PDF, sans "
-                 "IA). Plusieurs bulletins peuvent être sélectionnés d'un coup, ou reçus dans un "
-                 "fichier .zip (qui peut aussi contenir des feuilles de prépaie).",
+            text="Les chiffres sont recopiés tels quels du bulletin. Un PDF est lu sur ton PC, sans "
+                 "IA ; une photo (page 1 du bulletin, à plat et en entier) est lue par l'IA Gemini "
+                 "(clé requise) et recoupée automatiquement : vérifie les avertissements. Plusieurs "
+                 "bulletins peuvent être sélectionnés d'un coup, ou reçus dans un fichier .zip.",
             foreground=TEXT_MUTED, padding=(12, 0, 12, 6), wraplength=1000, justify="left",
         ).pack(anchor="w")
 
@@ -134,7 +135,7 @@ class BulletinTab(ttk.Frame):
 
     def choose_files(self):
         paths = filedialog.askopenfilenames(
-            title="Choisir un ou plusieurs bulletins de paie (PDF ou fichier .zip)",
+            title="Choisir un ou plusieurs bulletins de paie (PDF, photo ou fichier .zip)",
             filetypes=FILE_TYPES,
         )
         if paths:
@@ -157,14 +158,15 @@ class BulletinTab(ttk.Frame):
             waiting_text="En attente d'un bulletin de paie... (tu peux en envoyer plusieurs)",
             received_noun="Fichier",
             page_title="Bulletins de paie",
-            instruction="Choisis le ou les PDF de tes bulletins de paie (ou un fichier .zip qui en "
-                        "contient plusieurs), puis envoie-les au PC.",
-            choose_label="Choisir un fichier PDF ou ZIP",
-            accept=".pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
-            capture=False,
+            instruction="Prends en photo la page 1 de ton bulletin de paie (à plat, en entier, bien "
+                        "éclairée), ou choisis un PDF ou un fichier .zip, puis envoie au PC.",
+            choose_label="Prendre une photo",
+            accept="image/*,.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
+            capture=True,
             multiple=True,
-            allowed_suffixes=frozenset({".pdf", ".zip"}),
-            default_suffix=".pdf",
+            documents=True,
+            allowed_suffixes=frozenset({".pdf", ".zip", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}),
+            default_suffix=".jpg",
         )
 
     def import_files(self, paths: list[Path], extra_messages: list[str] | None = None) -> None:
@@ -448,7 +450,10 @@ class BulletinTab(ttk.Frame):
         bulletins = db.list_bulletins()
         for b in bulletins:
             self.tree.insert("", "end", iid=str(b.id), values=(
-                _month_label(b.period_start), _fmt_date(b.payment_date), _money(b.net_paye),
-                _money(b.brut), _money(b.net_fiscal), _number(b.heures),
+                _month_label(b.period_start), _fmt_date(b.payment_date),
+                # Un bulletin lu depuis une photo n'a pas ces chiffres (pied de page) : case vide
+                # plutôt qu'un « 0,00 » trompeur.
+                _money(b.net_paye) if b.net_paye else "", _money(b.brut),
+                _money(b.net_fiscal) if b.net_fiscal else "", _number(b.heures) if b.heures else "",
             ))
         self.summary_label.config(text=f"{len(bulletins)} bulletin(s)" if bulletins else "")

@@ -92,14 +92,93 @@ class MainWindow(ttk.Frame):
         "payslip" (l'onglet d'où vient l'import, qui affiche les messages d'erreur)."""
         from pathlib import Path
 
-        from app import zip_import
+        from app import payroll_vision, zip_import
 
         paths = [Path(p) for p in paths]
         has_zip = any(p.suffix.lower() == ".zip" for p in paths)
         expanded = zip_import.expand_documents(paths)
+        errors = list(expanded.errors)
+        photos = [p for p in expanded.files if payroll_vision.is_image(p)]
+        if photos:
+            # Photos : lues par l'IA (quelques secondes chacune), donc en arrière-plan ; la suite de
+            # l'import reprend ici quand elles sont toutes lues.
+            if not payroll_vision.available():
+                errors += [f"{p.name} : la lecture d'une photo nécessite une clé Gemini (onglet Paramètres)."
+                           for p in photos]
+                expanded.files = [p for p in expanded.files if p not in photos]
+                photos = []
+            elif not self._confirm_photo_upload():
+                expanded.cleanup()
+                return
+        if photos:
+            self._read_photos(photos, expanded, errors, origin, has_zip)
+        else:
+            self._dispatch_documents(expanded, errors, origin, has_zip)
+
+    def _confirm_photo_upload(self) -> bool:
+        """Une photo de bulletin contient des données personnelles (nom, adresse, salaire) : elle est
+        envoyée à Google pour être lue. Accord demandé une fois, retenu ensuite."""
+        from tkinter import messagebox
+
+        from app import config
+
+        cfg = config.load_config()
+        if cfg.get("payroll_photos_ok"):
+            return True
+        if not messagebox.askyesno(
+            "Lire une photo de document de paie ?",
+            "Pour lire une photo, l'application l'envoie à Google (IA Gemini). Un bulletin de paie "
+            "contient des informations personnelles (nom, adresse, salaire).\n\nUn PDF numérique, "
+            "lui, est lu uniquement sur ton PC.\n\nAutoriser l'envoi des photos de bulletins et de "
+            "feuilles de prépaie à Gemini ? (Cet accord est retenu ; tu peux le retirer dans "
+            "Paramètres.)",
+        ):
+            return False
+        cfg["payroll_photos_ok"] = True
+        config.save_config(cfg)
+        return True
+
+    def _read_photos(self, photos, expanded, errors, origin, has_zip) -> None:
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        from app import payroll_vision
+
+        count = len(photos)
+        self.set_mail_status(f"⏳ Lecture de {count} photo{'s' if count > 1 else ''} par l'IA... "
+                             "(quelques secondes par photo)")
+        self.root.config(cursor="watch")
+        failures: list[str] = []
+
+        def work(path):
+            try:
+                payroll_vision.prefetch(path)
+            except payroll_vision.PhotoError as exc:
+                failures.append(f"{path.name} : {exc}")
+                return path
+            except Exception as exc:  # noqa: BLE001
+                failures.append(f"{path.name} : lecture impossible ({exc}).")
+                return path
+            return None
+
+        def run():
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                failed = [p for p in pool.map(work, photos) if p is not None]
+            self.root.after(0, lambda: finish(failed))
+
+        def finish(failed):
+            self.root.config(cursor="")
+            self.set_mail_status("")
+            expanded.files = [p for p in expanded.files if p not in failed]
+            self._dispatch_documents(expanded, errors + failures, origin, has_zip)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _dispatch_documents(self, expanded, errors, origin, has_zip) -> None:
+        from app import zip_import
+
         try:
             bulletins, prepaies = [], []
-            errors = list(expanded.errors)
             for path in expanded.files:
                 kind = zip_import.classify(path)
                 if kind == zip_import.KIND_BULLETIN:
