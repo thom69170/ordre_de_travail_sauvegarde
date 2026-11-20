@@ -24,6 +24,9 @@ REPO_BRANCH = "main"
 RAW_VERSION_URL = (
     f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/{REPO_BRANCH}/app/version.py"
 )
+API_VERSION_URL = (
+    f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/app/version.py?ref={REPO_BRANCH}"
+)
 ZIP_URL = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/archive/refs/heads/{REPO_BRANCH}.zip"
 
 TIMEOUT_SECONDS = 10
@@ -52,13 +55,26 @@ def _parse_version(v: str) -> tuple[int, ...]:
 def get_remote_version() -> str | None:
     """Récupère le numéro de version publié sur GitHub, ou None si indisponible (pas de
     connexion, dépôt inaccessible...) - jamais bloquant/fatal pour l'appelant."""
-    try:
-        with urllib.request.urlopen(RAW_VERSION_URL, timeout=TIMEOUT_SECONDS) as resp:
-            content = resp.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, TimeoutError, OSError):
-        return None
-    match = re.search(r'VERSION\s*=\s*"([\d.]+)"', content)
-    return match.group(1) if match else None
+    # raw.githubusercontent.com garde ce fichier en cache ~5 minutes (même avec un paramètre ou un
+    # en-tête no-cache) : juste après une publication, il annonce l'ancienne version. L'API GitHub,
+    # elle, est à jour tout de suite ; le lien « raw » ne sert que de secours (limite de l'API :
+    # 60 appels par heure et par adresse, très au-delà d'une vérification toutes les 3 heures).
+    sources = (
+        (API_VERSION_URL, {"Accept": "application/vnd.github.raw"}),
+        (RAW_VERSION_URL, {"Cache-Control": "no-cache"}),
+    )
+    for url, headers in sources:
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(url, headers=headers), timeout=TIMEOUT_SECONDS
+            ) as resp:
+                content = resp.read().decode("utf-8", errors="replace")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            continue
+        match = re.search(r'VERSION\s*=\s*"([\d.]+)"', content)
+        if match:
+            return match.group(1)
+    return None
 
 
 def check_for_update() -> str | None:

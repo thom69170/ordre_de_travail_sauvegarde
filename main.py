@@ -117,8 +117,15 @@ def main() -> int:
     return 0
 
 
+UPDATE_CHECK_INTERVAL_MS = 3 * 3600 * 1000  # re-vérification toutes les 3 heures
+
+
 def _check_for_update_in_background(root: tk.Tk, window: MainWindow) -> None:
+    """Vérifie au démarrage puis toutes les 3 heures : l'app reste ouverte des jours en veille à
+    côté de l'horloge, une vérification au seul démarrage ne verrait jamais les mises à jour."""
     import threading
+
+    announced: list[str] = []
 
     def worker():
         try:
@@ -128,9 +135,23 @@ def _check_for_update_in_background(root: tk.Tk, window: MainWindow) -> None:
         except Exception:  # noqa: BLE001
             remote_version = None
         if remote_version:
-            root.after(0, lambda: window.settings_tab.set_update_available(remote_version))
+            root.after(0, lambda: found(remote_version))
 
-    threading.Thread(target=worker, daemon=True).start()
+    def found(remote_version: str):
+        window.settings_tab.set_update_available(remote_version)
+        if remote_version not in announced:  # une seule notification par version
+            announced.append(remote_version)
+            if window.tray.is_hidden():
+                window.tray.notify(
+                    f"La version {remote_version} est disponible : ouvre l'application, onglet "
+                    "Paramètres, « Télécharger et installer »."
+                )
+
+    def tick():
+        threading.Thread(target=worker, daemon=True).start()
+        root.after(UPDATE_CHECK_INTERVAL_MS, tick)
+
+    tick()
 
 
 def _refresh_old_trajets_in_background(root: tk.Tk, window: MainWindow) -> None:
