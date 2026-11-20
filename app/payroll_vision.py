@@ -83,16 +83,23 @@ _CLASSIFY_SCHEMA = {
     "required": ["type"],
 }
 
-_BULLETIN_PROMPT = """Tu lis la photo d'un BULLETIN DE PAIE français (page 1 : en-tête puis trois tableaux).
-Recopie ce qui est imprimé, sans rien inventer ni calculer. Information absente ou illisible : chaîne vide.
+_BULLETIN_PROMPT = """Tu lis la photo d'UNE PAGE d'un BULLETIN DE PAIE français (qui en compte deux : la page 1 porte les trois
+tableaux, la page 2 la fin du tableau « Autres éléments de paie » et le pied de page).
+Recopie ce qui est imprimé, sans rien inventer ni calculer. Information absente de CETTE page ou illisible :
+chaîne vide / liste vide.
 
-EN-TÊTE : period_start / period_end = la période « Salaire du JJ/MM/AAAA au JJ/MM/AAAA », au format AAAA-MM-JJ.
+EN-TÊTE (présent sur les deux pages) : period_start / period_end = la période « Salaire du JJ/MM/AAAA au
+JJ/MM/AAAA », au format AAAA-MM-JJ.
 
 TABLEAUX : lis UNIQUEMENT les deux tableaux suivants (ignore le tableau « Cotisations et contributions
-sociales » et le tableau « Date / Motif » à droite) :
-- section "brut" : « Eléments de revenu brut », de SALAIRE DE BASE jusqu'à la ligne SALAIRE BRUT incluse ;
+sociales » et le tableau « Date / Motif » à droite). Une page peut n'en contenir qu'une partie, voire rien :
+- section "brut" : « Eléments de revenu brut », de SALAIRE DE BASE jusqu'à la ligne SALAIRE BRUT incluse. Ce tableau
+  n'existe QUE sur la page 1 : sur la page 2 il n'y a pas de section "brut" (n'invente rien) ;
 - section "autres" : « Autres éléments de paie », de sa première ligne jusqu'à sa dernière (NET A PAYER AVANT PAS
   et lignes de prélèvement à la source comprises).
+Le bloc d'en-tête (COEFFICIENT, CLASSIFICATION, MENSUALISATION, TAUX HORAIRE, ANCIENNETÉ...) n'est PAS un
+tableau de lignes : ne le transcris jamais comme une ligne. Une ligne ne compte que si elle est dans l'un des
+deux tableaux ci-dessus et qu'elle a son libellé sur la même ligne horizontale.
 Pour chaque ligne de ces tableaux qui porte au moins un nombre, de haut en bas :
 - label : le libellé de la ligne, SANS le marqueur « RAP » de la colonne de gauche ;
 - numbers : la liste, de GAUCHE À DROITE, des nombres imprimés sur CETTE ligne (à la même hauteur que le libellé).
@@ -103,6 +110,18 @@ Recopie les chiffres EXACTEMENT comme imprimés, n'ajoute jamais de virgule ni d
 nombres négatifs. Une ligne a typiquement 3 nombres (quantité, valeur unitaire, montant), ou 1 seul (montant).
 Un chiffre qui fait partie du libellé (ex. « PRIME URBAIN 5 TRAJETS + ») reste dans le label.
 
+PIED DE PAGE (en bas de la page, surtout page 2) :
+- payment_date (AAAA-MM-JJ) et payment_mode (ex. VIREMENT) : ligne « Paiement effectué le JJ/MM/AAAA par ... ».
+- net_paye : le montant du cadre « Net payé en euros », tel qu'imprimé (avec sa virgule, ex. « 2233,44 »).
+- cumuls : si le bloc « DU MOIS / CUMULE » est lisible, des paires label/value (value recopiée telle
+  qu'imprimée, avec sa virgule) pour ces libellés exacts : « Brut fiscal (mois) », « Brut fiscal (cumul annuel) »,
+  « Cotisations salariales (mois) », « Cotisations salariales (cumul annuel) », « Brut abattu (mois) »,
+  « Brut abattu (cumul annuel) », « Cotisations patronales (mois) », « Cotisations patronales (cumul annuel) »,
+  « Net fiscal (mois) », « Net fiscal (cumul annuel) », « Heures déclarées (mois) »,
+  « Heures déclarées (cumul annuel) », « Plafond (mois) », « Plafond (cumul annuel) »,
+  « Avantage en nature (mois) », « Avantage en nature (cumul annuel) ».
+Chaîne ou liste vide pour ce qui n'est pas sur cette page.
+
 rotation_degrees : 0 si le document est à l'endroit ; 180 s'il est tête en bas.
 """
 
@@ -111,6 +130,17 @@ _BULLETIN_SCHEMA = {
     "properties": {
         "period_start": {"type": "STRING"},
         "period_end": {"type": "STRING"},
+        "payment_date": {"type": "STRING"},
+        "payment_mode": {"type": "STRING"},
+        "net_paye": {"type": "STRING"},
+        "cumuls": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {"label": {"type": "STRING"}, "value": {"type": "STRING"}},
+                "required": ["label", "value"],
+            },
+        },
         "lines": {
             "type": "ARRAY",
             "items": {
@@ -125,7 +155,8 @@ _BULLETIN_SCHEMA = {
         },
         "rotation_degrees": {"type": "INTEGER"},
     },
-    "required": ["period_start", "period_end", "lines", "rotation_degrees"],
+    "required": ["period_start", "period_end", "payment_date", "payment_mode", "net_paye", "cumuls",
+                 "lines", "rotation_degrees"],
 }
 
 _PREPAIE_PROMPT = """Tu lis la photo d'une FEUILLE DE PREPAIE de conducteur (rapport d'activité « RNA », une page).
@@ -322,6 +353,16 @@ def bulletin_from_payload(payload: dict) -> BulletinData:
         period_start=(payload.get("period_start") or "").strip(),
         period_end=(payload.get("period_end") or "").strip(),
     )
+    data.payment_date = (payload.get("payment_date") or "").strip()
+    data.payment_mode = (payload.get("payment_mode") or "").strip()
+    data.net_paye = raw_number(payload.get("net_paye", ""), 2) or 0.0
+    for entry in payload.get("cumuls") or []:
+        value = raw_number(entry.get("value", ""), 2)
+        label = str(entry.get("label", "")).strip()
+        if label and value is not None:
+            data.cumuls[label] = value
+    data.net_fiscal = data.cumuls.get("Net fiscal (mois)", 0.0)
+    data.heures = data.cumuls.get("Heures déclarées (mois)", 0.0)
     sections = {"brut": SECTION_BRUT, "autres": SECTION_AUTRES}
     suspect: list[str] = []
     for entry in payload.get("lines") or []:
@@ -343,15 +384,18 @@ def bulletin_from_payload(payload: dict) -> BulletinData:
     if suspect:
         data.warnings.append(
             "Quantité × valeur unitaire ≠ montant pour : " + ", ".join(suspect[:4])
-            + (" ..." if len(suspect) > 4 else "") + " : ces lignes sont peut-être mal lues, vérifie-les."
+            + (" ..." if len(suspect) > 4 else "")
+            + " : à vérifier sur l'original (ligne peut-être mal lue ; l'écart est parfois normal quand "
+              "le tarif change en cours de mois)."
         )
     return data
 
 
 def _read_bulletin(path: Path) -> BulletinData:
+    """Lit UNE page. Les recoupements (somme du brut, net payé) ne se font qu'une fois les pages du
+    bulletin réunies : voir assemble_bulletin_photos."""
     payload, uncertain = _read(path, _BULLETIN_PROMPT, _BULLETIN_SCHEMA)
     data = bulletin_from_payload(payload)
-    finalize_bulletin(data)
     if uncertain:
         data.warnings.insert(0, "Photo de travers : son orientation n'a pas pu être corrigée avec "
                                 "certitude, vérifie bien les chiffres (ou reprends la photo à l'endroit).")
@@ -470,3 +514,94 @@ def read_prepaie_photo(path: Path) -> PayslipData:
         return _read_prepaie(path)
     except PhotoError as exc:
         raise RuntimeError(str(exc)) from exc
+
+
+# ----------------------------------------------------------------------------- bulletin sur deux pages
+
+def _is_page_one(data: BulletinData) -> bool:
+    """La page 1 est celle dont le tableau des revenus bruts va jusqu'à la ligne SALAIRE BRUT."""
+    return any(line.section == SECTION_BRUT and normalize(line.label) == "salaire brut" for line in data.lines)
+
+
+def _page_rank(data: BulletinData) -> int:
+    """0 pour la page 1 (elle porte les revenus bruts), 1 pour la page 2 (pied de page)."""
+    return 0 if _is_page_one(data) or (any(line.section == SECTION_BRUT for line in data.lines)) else 1
+
+
+def _merge_pages(group: list[tuple[Path, BulletinData]]) -> BulletinData:
+    group = sorted(group, key=lambda item: _page_rank(item[1]))
+    merged = BulletinData(period_start=group[0][1].period_start, period_end=group[0][1].period_end)
+    seen: set[tuple] = set()
+    has_page_one = any(_is_page_one(page) for _path, page in group)
+    for index, (_path, page) in enumerate(group):
+        own: list[tuple] = []
+        for line in page.lines:
+            if has_page_one and not _is_page_one(page) and line.section == SECTION_BRUT:
+                continue  # lignes de « revenu brut » inventées sur une page qui n'a pas ce tableau
+            key = (line.section, normalize(line.label), line.quantity, line.rate, line.amount)
+            if key in seen and index > 0:
+                continue  # même ligne sur deux photos (page photographiée deux fois) : gardée une fois
+            own.append(key)
+            merged.lines.append(line)
+        seen.update(own)
+        merged.payment_date = merged.payment_date or page.payment_date
+        merged.payment_mode = merged.payment_mode or page.payment_mode
+        merged.net_paye = merged.net_paye or page.net_paye
+        for label, value in page.cumuls.items():
+            merged.cumuls.setdefault(label, value)
+        merged.absences += [a for a in page.absences if a not in merged.absences]
+        merged.period_end = merged.period_end or page.period_end
+        merged.warnings += [w for w in page.warnings if w not in merged.warnings]
+    merged.net_fiscal = merged.cumuls.get("Net fiscal (mois)", 0.0)
+    merged.heures = merged.cumuls.get("Heures déclarées (mois)", 0.0)
+    return merged
+
+
+def combine_to_pdf(paths: list[Path]) -> Path:
+    """Les photos d'un même bulletin réunies en un seul PDF (le bulletin garde ainsi un seul fichier
+    source, comme un OT sur plusieurs pages). Fichier temporaire, à supprimer après l'import."""
+    import tempfile
+
+    from app import ocr_engine
+
+    images: list[Image.Image] = []
+    for path in paths:
+        images.extend(ocr_engine.load_pages(path)[:1])
+    folder = Path(tempfile.mkdtemp(prefix="ordres_bulletin_"))
+    target = folder / "bulletin_assemble.pdf"
+    first, rest = images[0].convert("RGB"), [img.convert("RGB") for img in images[1:]]
+    first.save(target, "PDF", save_all=True, append_images=rest, resolution=150.0)
+    return target
+
+
+def assemble_bulletin_photos(items: list[tuple[Path, BulletinData]]) -> list[tuple[Path, BulletinData]]:
+    """Réunit les photos d'un même bulletin (même période : page 1 + page 2) en un seul bulletin,
+    puis applique les recoupements du bulletin complet. Les PDF (déjà complets) passent tels quels.
+    Un bulletin dont il manque une page est importé quand même, avec un avertissement."""
+    result = [(p, d) for p, d in items if not is_image(p)]
+    groups: dict[str, list[tuple[Path, BulletinData]]] = {}
+    for path, data in items:
+        if is_image(path):
+            groups.setdefault(data.period_start or f"?{path}", []).append((path, data))
+    for _period, group in groups.items():
+        data = _merge_pages(group) if len(group) > 1 else group[0][1]
+        path = group[0][0] if len(group) == 1 else combine_to_pdf(
+            [p for p, _d in sorted(group, key=lambda item: _page_rank(item[1]))]
+        )
+        finalize_bulletin(data)
+        has_brut = any(line.section == SECTION_BRUT for line in data.lines)
+        has_footer = bool(data.cumuls) or bool(data.payment_date)
+        if not has_brut:
+            data.warnings.append("La page 1 du bulletin (revenus bruts) n'a pas été photographiée.")
+        if any(w.startswith(("La somme des éléments", "Le net à payer lu")) for w in data.warnings):
+            data.warnings.append(
+                "Photo probablement de travers ou prise de biais : reprends-la bien à plat, de face et en "
+                "entier, avec un bon éclairage (sans reflet ni ombre)."
+            )
+        elif not has_footer:
+            data.warnings.append(
+                "La page 2 du bulletin n'a pas été photographiée : net payé, cumuls et prélèvement à la "
+                "source ne sont pas relevés (le net est calculé depuis le tableau quand c'est possible)."
+            )
+        result.append((path, data))
+    return result

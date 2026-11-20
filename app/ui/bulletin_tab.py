@@ -97,9 +97,10 @@ class BulletinTab(ttk.Frame):
         ttk.Label(
             self,
             text="Les chiffres sont recopiés tels quels du bulletin. Un PDF est lu sur ton PC, sans "
-                 "IA ; une photo (page 1 du bulletin, à plat et en entier) est lue par l'IA Gemini "
-                 "(clé requise) et recoupée automatiquement : vérifie les avertissements. Plusieurs "
-                 "bulletins peuvent être sélectionnés d'un coup, ou reçus dans un fichier .zip.",
+                 "IA. Une photo est lue par l'IA Gemini (clé requise) et recoupée automatiquement : "
+                 "photographie les DEUX pages du bulletin (à plat, en entier) et envoie-les ensemble, "
+                 "elles sont réunies toutes seules ; vérifie les avertissements. Plusieurs bulletins "
+                 "peuvent être sélectionnés d'un coup, ou reçus dans un fichier .zip.",
             foreground=TEXT_MUTED, padding=(12, 0, 12, 6), wraplength=1000, justify="left",
         ).pack(anchor="w")
 
@@ -158,8 +159,9 @@ class BulletinTab(ttk.Frame):
             waiting_text="En attente d'un bulletin de paie... (tu peux en envoyer plusieurs)",
             received_noun="Fichier",
             page_title="Bulletins de paie",
-            instruction="Prends en photo la page 1 de ton bulletin de paie (à plat, en entier, bien "
-                        "éclairée), ou choisis un PDF ou un fichier .zip, puis envoie au PC.",
+            instruction="Prends en photo les 2 pages de ton bulletin de paie (à plat, en entier, bien "
+                        "éclairées), puis envoie-les ensemble au PC. Tu peux aussi choisir un PDF ou "
+                        "un fichier .zip.",
             choose_label="Prendre une photo",
             accept="image/*,.pdf,.zip,application/pdf,application/zip,application/x-zip-compressed",
             capture=True,
@@ -190,6 +192,11 @@ class BulletinTab(ttk.Frame):
                 errors.append(f"{path.name} : période du bulletin introuvable.")
                 continue
             parsed.append((path, data))
+
+        # Photos : les deux pages d'un même bulletin sont réunies en un seul (voir payroll_vision).
+        from app import payroll_vision
+
+        parsed = payroll_vision.assemble_bulletin_photos(parsed)
 
         # Un même mois présent plusieurs fois : on garde le bulletin le plus détaillé.
         best: dict[str, tuple] = {}
@@ -243,6 +250,12 @@ class BulletinTab(ttk.Frame):
                 db.update_bulletin(bulletin)
             else:
                 db.insert_bulletin(bulletin)
+            if path.name == "bulletin_assemble.pdf":  # PDF temporaire des photos réunies : copié, à jeter
+                path.unlink(missing_ok=True)
+                try:
+                    path.parent.rmdir()
+                except OSError:
+                    pass
             imported.append(_month_label(data.period_start))
             warnings += [f"{_month_label(data.period_start)} : {w}" for w in data.warnings]
 

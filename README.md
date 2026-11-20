@@ -178,14 +178,20 @@ statistiques par semaine / mois / année.
    virgule d'après la colonne ; la somme des éléments de revenu brut est recoupée avec le salaire
    brut, et quantité × valeur unitaire avec le montant sur les lignes utilisées par la comparaison :
    en cas d'écart, un avertissement signale les lignes à vérifier (photo floue, doigt, reflet...).
-   Limites d'une photo de bulletin : seule la **page 1** est lue, et pas le détail des cotisations
-   ni les cumuls du pied de page (le net payé est alors calculé depuis le tableau). Une photo =
-   un document. **Confidentialité** : une photo de bulletin contient ton nom, ton adresse et ton
+   **Un bulletin compte deux pages** : photographie-les toutes les deux (la page 2 porte le net
+   payé, le mode de paiement, les cumuls et le prélèvement à la source) et envoie-les ensemble ;
+   les deux photos d'un même mois sont réunies automatiquement, dans n'importe quel ordre, en un
+   seul bulletin (le fichier conservé est alors un PDF des deux photos). Si une page manque, le
+   bulletin est importé quand même, avec un avertissement. Limites : le détail des cotisations
+   n'est pas relevé sur une photo (il ne sert à aucune comparaison) ; une feuille de prépaie, elle,
+   tient sur une seule photo. Une photo prise de biais (perspective) peut décaler des lignes : les
+   recoupements le signalent. **Confidentialité** : une photo de bulletin contient ton nom, ton adresse et ton
    salaire et part chez Google ; l'app demande ton accord à la première photo, retirable dans
-   Paramètres. Mesuré sur 6 bulletins et 6 feuilles de prépaie réels photographiés artificiellement
-   (inclinaison, flou, éclairage inégal, compression) : 100 % des lignes de revenu brut, des
-   « autres éléments de paie » et du récapitulatif mensuel lues exactement ; une photo très floue
-   est signalée par les avertissements plutôt que lue de travers en silence.
+   Paramètres. Mesuré sur 6 bulletins (2 pages chacun) et 6 feuilles de prépaie réels photographiés
+   artificiellement (inclinaison, perspective, flou, éclairage inégal, compression) : 99 % des
+   lignes de revenu brut (64 sur 65) et toutes les autres lignes, les cumuls et le net payé lus
+   exactement ; une erreur de lecture est signalée par les avertissements plutôt que passée sous
+   silence.
    En plus des heures sup, la lecture récupère aussi tous les autres compteurs du document
    (jours travaillés, TTE, repos différés, RC nuit, cumuls annuels...) — accessibles via le
    bouton **Voir tous les détails...**. Le bouton **Contrôler avec mes OT...** compare la feuille
