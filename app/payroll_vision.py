@@ -23,7 +23,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from app import config, gemini_engine as ge
+from app import config, diagnostics, gemini_engine as ge
 from app.bulletin_parser import (
     IMAGE_SUFFIXES,
     SECTION_AUTRES,
@@ -296,6 +296,8 @@ def classify_photo(path: Path) -> str | None:
     parts = [{"text": _CLASSIFY_PROMPT},
              {"inline_data": {"mime_type": "image/png", "data": ge._image_to_png_b64(small)}}]
     kind = _ask(parts, _CLASSIFY_SCHEMA, key).get("type")
+    diagnostics.record("photo_classify", file=path.name, size=path.stat().st_size, page_px=list(page.size),
+                       result=kind)
     return kind if kind in (KIND_BULLETIN, KIND_PREPAIE) else None
 
 
@@ -396,6 +398,14 @@ def _read_bulletin(path: Path) -> BulletinData:
     bulletin réunies : voir assemble_bulletin_photos."""
     payload, uncertain = _read(path, _BULLETIN_PROMPT, _BULLETIN_SCHEMA)
     data = bulletin_from_payload(payload)
+    diagnostics.record(
+        "photo_read_bulletin", file=path.name, orientation_uncertain=uncertain, payload=payload,
+        parsed={"period": data.period_start, "lines": len(data.lines),
+                "brut": sum(1 for l in data.lines if l.section == SECTION_BRUT),
+                "autres": sum(1 for l in data.lines if l.section == SECTION_AUTRES), "net_paye": data.net_paye,
+                "payment_date": data.payment_date, "cumuls": len(data.cumuls), "page_one": _is_page_one(data)},
+        warnings=data.warnings,
+    )
     if uncertain:
         data.warnings.insert(0, "Photo de travers : son orientation n'a pas pu être corrigée avec "
                                 "certitude, vérifie bien les chiffres (ou reprends la photo à l'endroit).")
@@ -432,6 +442,9 @@ def prepaie_from_payload(payload: dict) -> PayslipData:
 def _read_prepaie(path: Path) -> PayslipData:
     payload, uncertain = _read(path, _PREPAIE_PROMPT, _PREPAIE_SCHEMA)
     result = prepaie_from_payload(payload)
+    diagnostics.record("photo_read_prepaie", file=path.name, orientation_uncertain=uncertain, payload=payload,
+                       parsed={"period": result.period_start, "recap": len(result.recap),
+                               "compteurs": len(result.compteurs)})
     if not result.period_start:
         result.warnings.append("Période (dates) non détectée sur la photo.")
     if not result.recap or not result.compteurs:
@@ -468,13 +481,22 @@ def prefetch(path: Path) -> str | None:
     if cached is not None:
         return cached[0] if cached[0] in (KIND_BULLETIN, KIND_PREPAIE) else None
     # Une erreur (quota, réseau, photo illisible) n'est pas gardée : un nouvel essai refait l'appel.
-    kind = classify_photo(path)
-    if kind == KIND_BULLETIN:
-        entry = (kind, _read_bulletin(path))
-    elif kind == KIND_PREPAIE:
-        entry = (kind, _read_prepaie(path))
-    else:
-        entry = ("autre", None)
+    diagnostics.record("photo_start", file=path.name, copy=diagnostics.keep_photo(path))
+    try:
+        kind = classify_photo(path)
+    except PhotoError as exc:
+        diagnostics.record("photo_error", file=path.name, error=str(exc))
+        raise
+    try:
+        if kind == KIND_BULLETIN:
+            entry = (kind, _read_bulletin(path))
+        elif kind == KIND_PREPAIE:
+            entry = (kind, _read_prepaie(path))
+        else:
+            entry = ("autre", None)
+    except PhotoError as exc:
+        diagnostics.record("photo_error", file=path.name, kind=kind, error=str(exc))
+        raise
     with _LOCK:
         _CACHE[key] = entry
     return entry[0] if entry[0] in (KIND_BULLETIN, KIND_PREPAIE) else None
@@ -574,6 +596,88 @@ def combine_to_pdf(paths: list[Path]) -> Path:
     return target
 
 
+def _finish_bulletin(data: BulletinData) -> tuple[bool, bool]:
+    """Recoupements du bulletin (réuni) et avertissements sur les pages manquantes. Retourne
+    (a_la_page_1, a_la_page_2)."""
+    finalize_bulletin(data)
+    has_brut = any(line.section == SECTION_BRUT for line in data.lines)
+    has_footer = bool(data.cumuls) or bool(data.payment_date)
+    if not has_brut:
+        data.warnings.append("La page 1 du bulletin (revenus bruts) n'a pas été photographiée.")
+    if any(w.startswith(("La somme des éléments", "Le net à payer lu")) for w in data.warnings):
+        data.warnings.append(
+            "Photo probablement de travers ou prise de biais : reprends-la bien à plat, de face et en "
+            "entier, avec un bon éclairage (sans reflet ni ombre)."
+        )
+    elif has_brut and not has_footer:
+        data.warnings.append(
+            "La page 2 du bulletin n'a pas été photographiée : net payé, cumuls et prélèvement à la "
+            "source ne sont pas relevés (le net est calculé depuis le tableau quand c'est possible). "
+            "Tu peux l'envoyer plus tard : elle sera ajoutée à ce bulletin."
+        )
+    return has_brut, has_footer
+
+
+def bulletin_to_data(bulletin) -> BulletinData:
+    """Un bulletin déjà enregistré, remis sous la forme d'une lecture (pour y ajouter une page)."""
+    try:
+        details = json.loads(bulletin.details_json) if bulletin.details_json else {}
+    except ValueError:
+        details = {}
+    data = BulletinData(
+        period_start=bulletin.period_start, period_end=bulletin.period_end,
+        payment_date=bulletin.payment_date, payment_mode=details.get("payment_mode", ""),
+        net_paye=bulletin.net_paye,
+    )
+    for entry in details.get("lines") or []:
+        try:
+            data.lines.append(BulletinLine(**entry))
+        except TypeError:
+            continue
+    data.cumuls = dict(details.get("cumuls") or {})
+    data.absences = list(details.get("absences") or [])
+    data.net_fiscal = data.cumuls.get("Net fiscal (mois)", 0.0)
+    data.heures = data.cumuls.get("Heures déclarées (mois)", 0.0)
+    return data
+
+
+_STALE_WARNINGS = ("La page ", "La somme des éléments", "Le net à payer lu", "Montant net payé non trouvé",
+                   "Ligne « SALAIRE BRUT » non trouvée", "Photo probablement", "Aucune ligne")
+
+
+def merge_with_existing(existing, path: Path, data: BulletinData):
+    """Une page photographiée plus tard complète un bulletin déjà importé de la même période (page 2
+    envoyée après la page 1, ou l'inverse) au lieu de le remplacer. Retourne (fichier, bulletin_complet)
+    ou None si les deux ne sont pas complémentaires (alors : remplacement habituel, avec question)."""
+    from app import storage
+
+    if not (is_image(path) or path.name == "bulletin_assemble.pdf"):
+        return None
+    old = bulletin_to_data(existing)
+
+    def has_brut(d: BulletinData) -> bool:
+        return any(line.section == SECTION_BRUT for line in d.lines)
+
+    def has_footer(d: BulletinData) -> bool:
+        return bool(d.cumuls) or bool(d.payment_date)
+
+    complementary = (has_brut(old) and not has_footer(old) and not has_brut(data) and has_footer(data)) or (
+        has_footer(old) and not has_brut(old) and has_brut(data) and not has_footer(data))
+    old_file = storage.resolve_bulletin_path(existing.source_filename) if existing.source_filename else None
+    if not complementary or old_file is None or not old_file.exists():
+        return None
+    if old_file.suffix.lower() == ".pdf":
+        return None  # PDF (numérique ou déjà réuni) : pas une photo seule, on ne le recompose pas
+    ordered = [(old_file, old), (path, data)] if has_brut(old) else [(path, data), (old_file, old)]
+    merged = _merge_pages(ordered)
+    merged.warnings = [w for w in merged.warnings if not w.startswith(_STALE_WARNINGS)]
+    _finish_bulletin(merged)
+    combined = combine_to_pdf([p for p, _d in ordered])
+    diagnostics.record("bulletin_completed", period=data.period_start, existing_file=existing.source_filename,
+                       new_file=path.name, merged_lines=len(merged.lines))
+    return combined, merged
+
+
 def assemble_bulletin_photos(items: list[tuple[Path, BulletinData]]) -> list[tuple[Path, BulletinData]]:
     """Réunit les photos d'un même bulletin (même période : page 1 + page 2) en un seul bulletin,
     puis applique les recoupements du bulletin complet. Les PDF (déjà complets) passent tels quels.
@@ -588,20 +692,14 @@ def assemble_bulletin_photos(items: list[tuple[Path, BulletinData]]) -> list[tup
         path = group[0][0] if len(group) == 1 else combine_to_pdf(
             [p for p, _d in sorted(group, key=lambda item: _page_rank(item[1]))]
         )
-        finalize_bulletin(data)
-        has_brut = any(line.section == SECTION_BRUT for line in data.lines)
-        has_footer = bool(data.cumuls) or bool(data.payment_date)
-        if not has_brut:
-            data.warnings.append("La page 1 du bulletin (revenus bruts) n'a pas été photographiée.")
-        if any(w.startswith(("La somme des éléments", "Le net à payer lu")) for w in data.warnings):
-            data.warnings.append(
-                "Photo probablement de travers ou prise de biais : reprends-la bien à plat, de face et en "
-                "entier, avec un bon éclairage (sans reflet ni ombre)."
-            )
-        elif not has_footer:
-            data.warnings.append(
-                "La page 2 du bulletin n'a pas été photographiée : net payé, cumuls et prélèvement à la "
-                "source ne sont pas relevés (le net est calculé depuis le tableau quand c'est possible)."
-            )
+        has_brut, has_footer = _finish_bulletin(data)
+        diagnostics.record(
+            "bulletin_assemble", period=data.period_start, photos=[p.name for p, _d in group],
+            pages=[{"file": p.name, "page_one": _is_page_one(d),
+                    "brut": sum(1 for l in d.lines if l.section == SECTION_BRUT),
+                    "lines": len(d.lines), "period": d.period_start} for p, d in group],
+            merged_lines=len(data.lines), brut_total=data.brut, net_paye=data.net_paye,
+            has_page_one=has_brut, has_footer=has_footer, warnings=data.warnings,
+        )
         result.append((path, data))
     return result

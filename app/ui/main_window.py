@@ -94,8 +94,11 @@ class MainWindow(ttk.Frame):
 
         from app import payroll_vision, zip_import
 
+        from app import diagnostics
+
         paths = [Path(p) for p in paths]
         has_zip = any(p.suffix.lower() == ".zip" for p in paths)
+        diagnostics.record("import_documents", origin=origin, files=[p.name for p in paths], zip=has_zip)
         expanded = zip_import.expand_documents(paths)
         errors = list(expanded.errors)
         photos = [p for p in expanded.files if payroll_vision.is_image(p)]
@@ -175,12 +178,13 @@ class MainWindow(ttk.Frame):
         threading.Thread(target=run, daemon=True).start()
 
     def _dispatch_documents(self, expanded, errors, origin, has_zip) -> None:
-        from app import zip_import
+        from app import diagnostics, zip_import
 
         try:
             bulletins, prepaies = [], []
             for path in expanded.files:
                 kind = zip_import.classify(path)
+                diagnostics.record("classify", file=path.name, kind=kind)
                 if kind == zip_import.KIND_BULLETIN:
                     bulletins.append(path)
                 elif kind == zip_import.KIND_PREPAIE:
@@ -189,6 +193,8 @@ class MainWindow(ttk.Frame):
                     errors.append(f"{path.name} : ni un bulletin de paie ni une feuille de prépaie reconnus.")
 
             origin_is_bulletin = origin == "bulletin"
+            diagnostics.record("dispatch", origin=origin, bulletins=[p.name for p in bulletins],
+                               prepaies=[p.name for p in prepaies], errors=errors)
             if bulletins or origin_is_bulletin:
                 self.bulletin_tab.import_files(bulletins, errors if origin_is_bulletin else [])
             if prepaies or not origin_is_bulletin:

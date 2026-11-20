@@ -111,6 +111,10 @@ class PayslipTab(ttk.Frame):
 
         self.queue_label = ttk.Label(top, text="", foreground=ACCENT)
         self.queue_label.pack(side="left")
+        ttk.Button(
+            top, text="Signaler un problème...",
+            command=self._open_report,
+        ).pack(side="right")
 
         form = ttk.LabelFrame(self, text="Heures sup. relevées", padding=10)
         form.pack(fill="x", padx=12, pady=(0, 8))
@@ -183,6 +187,11 @@ class PayslipTab(ttk.Frame):
             self, text="", foreground=TEXT_MUTED, wraplength=900, justify="left",
         )
         self.deduced_legend.pack(side="bottom", anchor="w", padx=12, pady=(0, 6))
+
+    def _open_report(self):
+        from app.ui.report_dialog import open_report_dialog
+
+        open_report_dialog(self)
 
     # ------------------------------------------------------------- import
 
@@ -322,8 +331,13 @@ class PayslipTab(ttk.Frame):
         # ignoré ici. Comme pour l'onglet Importer, le téléphone peut envoyer plusieurs feuilles
         # à la suite avec le même QR code, on les empile et on ne charge la suivante qu'une fois
         # le relevé courant enregistré ou réinitialisé.
-        # Le fichier reçu peut être un .zip ou un bulletin de paie : l'aiguillage commun décide.
-        self.app.import_documents([path], "payslip")
+        # Le fichier reçu peut être un .zip ou un bulletin de paie : l'aiguillage commun décide. Les
+        # fichiers d'un même envoi sont réunis (ex. une feuille + un bulletin envoyés ensemble).
+        if not hasattr(self, "_phone_batch"):
+            from app.ui.phone_batch import PhoneBatch
+
+            self._phone_batch = PhoneBatch(self, lambda paths: self.app.import_documents(paths, "payslip"))
+        self._phone_batch.add(path, is_append, batch_total)
 
     def _maybe_start_next_from_queue(self):
         self._update_queue_label()

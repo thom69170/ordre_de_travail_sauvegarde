@@ -83,6 +83,10 @@ class SettingsTab(ttk.Frame):
         contact_row.pack(fill="x", pady=(8, 0))
         ttk.Label(contact_row, text=CONTACT_EMAIL, font=("Segoe UI", 10, "bold")).pack(side="left")
         ttk.Button(
+            contact_row, text="Signaler un problème...",
+            command=self._open_report,
+        ).pack(side="left", padx=(16, 0))
+        ttk.Button(
             contact_row, text="Envoyer un e-mail",
             command=lambda: webbrowser.open(
                 f"mailto:{CONTACT_EMAIL}?subject=Ordres%20de%20travail%20-%20Suggestion%20ou%20probl%C3%A8me"
@@ -189,6 +193,11 @@ class SettingsTab(ttk.Frame):
         else:
             cfg.pop("payroll_photos_ok", None)
         config.save_config(cfg)
+
+    def _open_report(self):
+        from app.ui.report_dialog import open_report_dialog
+
+        open_report_dialog(self)
 
     def _toggle_visibility(self):
         self._shown = not self._shown

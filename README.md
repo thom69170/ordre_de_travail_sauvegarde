@@ -178,6 +178,9 @@ statistiques par semaine / mois / année.
    virgule d'après la colonne ; la somme des éléments de revenu brut est recoupée avec le salaire
    brut, et quantité × valeur unitaire avec le montant sur les lignes utilisées par la comparaison :
    en cas d'écart, un avertissement signale les lignes à vérifier (photo floue, doigt, reflet...).
+   **Photos reçues du téléphone** : les photos d'un même envoi (les 2 pages d'un bulletin) sont
+   lues ensemble ; une page envoyée plus tard, seule, **complète le bulletin déjà importé** de ce
+   mois au lieu de le remplacer (page 2 après la page 1, ou l'inverse), sans question.
    **Un bulletin compte deux pages** : photographie-les toutes les deux (la page 2 porte le net
    payé, le mode de paiement, les cumuls et le prélèvement à la source) et envoie-les ensemble ;
    les deux photos d'un même mois sont réunies automatiquement, dans n'importe quel ordre, en un
@@ -379,6 +382,13 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
   changements d'onglet et redimensionnements 2 à 4 fois plus rapides, apparence identique)
 - `app/ui/tray.py` / `app/single_instance.py` / `app/autostart.py` — veille à côté de l'horloge,
   une seule copie de l'app, lancement au démarrage de Windows
+- `app/diagnostics.py` / `app/ui/report_dialog.py` — journal technique des imports et bouton
+  **Signaler un problème...** (Paramètres, Bulletins de paie, Heures sup.) : crée un rapport .zip
+  (version, système, réglages sans secret, résumé des données, derniers événements avec la réponse
+  brute de l'IA pour chaque photo, pages regroupées ou non, erreurs) que l'utilisateur envoie par
+  e-mail ; les photos récentes (réduites) ne sont jointes que si la case est cochée. Rien n'est
+  envoyé automatiquement ; le journal ne contient ni mot de passe, ni clé, ni identité.
+- `app/ui/phone_batch.py` — regroupe les fichiers d'un même envoi du téléphone
 - `app/payroll_vision.py` — lecture par l'IA d'un bulletin de paie ou d'une feuille de prépaie
   photographiés (redressement, recoupements, mêmes structures que la lecture d'un PDF)
 - `app/mail_import.py` — réception des OT par e-mail (IMAP, filtre sur l'expéditeur, décision

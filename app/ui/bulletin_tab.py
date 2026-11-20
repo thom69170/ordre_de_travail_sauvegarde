@@ -77,6 +77,10 @@ class BulletinTab(ttk.Frame):
         super().__init__(parent)
         self.app = app
         self._phone_dialog = None
+        # Les photos d'un même envoi du téléphone (les 2 pages d'un bulletin) sont lues ensemble.
+        from app.ui.phone_batch import PhoneBatch
+
+        self._phone_batch = PhoneBatch(self, lambda paths: self.app.import_documents(paths, "bulletin"))
         self._build_ui()
         self.refresh()
 
@@ -93,6 +97,10 @@ class BulletinTab(ttk.Frame):
         ).pack(side="left", padx=(8, 0))
         self.status_label = ttk.Label(top, text="", foreground=TEXT_MUTED)
         self.status_label.pack(side="left", padx=10)
+        ttk.Button(
+            top, text="Signaler un problème...",
+            command=self._open_report,
+        ).pack(side="right")
 
         ttk.Label(
             self,
@@ -132,6 +140,11 @@ class BulletinTab(ttk.Frame):
         self.tree.bind("<Double-1>", lambda e: self.show_details())
         self.tree.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
+    def _open_report(self):
+        from app.ui.report_dialog import open_report_dialog
+
+        open_report_dialog(self)
+
     # ------------------------------------------------------------- import
 
     def choose_files(self):
@@ -152,9 +165,7 @@ class BulletinTab(ttk.Frame):
             return
         self._phone_dialog = PhoneUploadDialog(
             self.winfo_toplevel(),
-            on_file_received=lambda path, _append=False, _total=1: self.app.import_documents(
-                [path], "bulletin"
-            ),
+            on_file_received=self._phone_batch.add,
             dialog_title="Recevoir un bulletin de paie depuis le téléphone",
             waiting_text="En attente d'un bulletin de paie... (tu peux en envoyer plusieurs)",
             received_noun="Fichier",
@@ -197,6 +208,26 @@ class BulletinTab(ttk.Frame):
         from app import payroll_vision
 
         parsed = payroll_vision.assemble_bulletin_photos(parsed)
+        from app import diagnostics
+
+        diagnostics.record("bulletins_parsed", items=[
+            {"file": p.name, "period": d.period_start, "lines": len(d.lines), "net_paye": d.net_paye,
+             "warnings": d.warnings[:6]} for p, d in parsed], errors=errors)
+
+        # Une page photographiée plus tard (page 2 après la page 1, ou l'inverse) COMPLÈTE le bulletin déjà
+        # importé de ce mois au lieu de le remplacer.
+        completed: set[str] = set()
+        completed_notes: list[str] = []
+        merged_items = []
+        for path, data in parsed:
+            existing_bulletin = db.get_bulletin_by_period(data.period_start) if data.period_start else None
+            done = payroll_vision.merge_with_existing(existing_bulletin, path, data) if existing_bulletin else None
+            if done is not None:
+                path, data = done
+                completed.add(data.period_start)
+                completed_notes.append(f"{_month_label(data.period_start)} : page ajoutée au bulletin déjà importé.")
+            merged_items.append((path, data))
+        parsed = merged_items
 
         # Un même mois présent plusieurs fois : on garde le bulletin le plus détaillé.
         best: dict[str, tuple] = {}
@@ -217,7 +248,7 @@ class BulletinTab(ttk.Frame):
         # Une seule question pour tous les bulletins déjà importés (un zip peut en contenir 12).
         existing_months = [
             _month_label(d.period_start) for _p, d in parsed
-            if db.get_bulletin_by_period(d.period_start) is not None
+            if db.get_bulletin_by_period(d.period_start) is not None and d.period_start not in completed
         ]
         replace_existing = True
         if existing_months:
@@ -227,11 +258,14 @@ class BulletinTab(ttk.Frame):
                 "\n\nLes remplacer ? (Non : ils sont ignorés.)",
             )
 
+        diagnostics.record("bulletins_existing", months=existing_months, replace=replace_existing)
         imported: list[str] = []
         for path, data in parsed:
             existing = db.get_bulletin_by_period(data.period_start)
             if existing is not None:
-                if not replace_existing:
+                if not replace_existing and data.period_start not in completed:
+                    diagnostics.record("bulletin_skipped", period=data.period_start,
+                                       reason="existant, remplacement refusé")
                     continue
                 if existing.source_filename:
                     storage.delete_bulletin_file(existing.source_filename)
@@ -257,12 +291,14 @@ class BulletinTab(ttk.Frame):
                 except OSError:
                     pass
             imported.append(_month_label(data.period_start))
+            diagnostics.record("bulletin_saved", period=data.period_start, lines=len(data.lines),
+                               replaced=existing is not None, file=bulletin.source_filename)
             warnings += [f"{_month_label(data.period_start)} : {w}" for w in data.warnings]
 
         self.refresh()
         for child in self.warnings_holder.winfo_children():
             child.destroy()
-        frame = show_warnings(self.warnings_holder, errors + warnings)
+        frame = show_warnings(self.warnings_holder, errors + completed_notes + warnings)
         if frame:
             frame.pack(fill="x", pady=(0, 6))
         if imported:

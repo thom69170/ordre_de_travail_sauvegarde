@@ -45,6 +45,12 @@ except Exception as exc:  # noqa: BLE001
 def _install_error_dialog(root: tk.Tk) -> None:
     def report_callback_exception(exc, val, tb):
         traceback.print_exception(exc, val, tb)
+        try:
+            from app import diagnostics
+
+            diagnostics.record_exception("interface", val)
+        except Exception:  # noqa: BLE001
+            pass
         messagebox.showerror(
             "Erreur inattendue",
             f"Une erreur est survenue :\n{val}\n\n"
@@ -65,6 +71,10 @@ def main() -> int:
 
     db.init_db()
     ocr_engine.configure()
+    from app import diagnostics
+
+    diagnostics.install_exception_hooks()
+    diagnostics.record("start", frozen=getattr(sys, "frozen", False), argv=sys.argv[1:])
 
     root = tk.Tk()
     root.title(APP_TITLE)

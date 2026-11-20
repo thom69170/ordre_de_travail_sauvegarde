@@ -307,6 +307,10 @@ class PhoneUploadServer:
                 self.end_headers()
 
                 try:
+                    from app import diagnostics
+
+                    diagnostics.record("phone_received", file=dest_path.name, size=len(data),
+                                       append=is_append, batch_total=batch_total, name=raw_name[:60])
                     on_file_received(dest_path, is_append, batch_total)
                 except Exception:  # noqa: BLE001
                     pass
