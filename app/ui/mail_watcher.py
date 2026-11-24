@@ -82,6 +82,8 @@ class MailWatcher:
                 error = str(exc)
             for mail in mails:
                 outcomes.append(self._process(mail))
+            # Le téléphone (application OT Envoi) lit cette liste : les jours enregistrés sur le PC.
+            mail_import.publish_state(settings, force=bool(outcomes))
         except Exception as exc:  # noqa: BLE001
             error = error or f"Erreur inattendue : {exc}"
         finally:
@@ -105,7 +107,7 @@ class MailWatcher:
             mail_import.discard(mail)
             mail_import.log_event(f"✓ OT du {_short_date(outcome.date)} enregistré automatiquement ({who}).")
         else:
-            mail.save_manifest("queued")
+            mail.save_manifest("queued", date=outcome.date or "")
             mail_import.log_event(
                 f"À relire : OT reçu de {who} ({'; '.join(outcome.reasons)}).", "warn")
         return outcome

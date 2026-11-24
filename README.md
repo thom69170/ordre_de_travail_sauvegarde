@@ -89,6 +89,14 @@ statistiques par semaine / mois / année.
      lues. Le mot de passe est stocké en clair dans `config.json`, comme la clé Gemini, et n'est pas
      inclus dans les sauvegardes. Le code est dans `app/mail_import.py` (IMAP, filtrage, décision
      d'enregistrement automatique) et `app/ui/mail_watcher.py` (relève périodique).
+   - **Application Android « OT Envoi »** (dossier `android/`, voir son README) : photographie
+     l'OT avec l'appareil photo intégré et l'envoie directement dans cette boîte mail, **sans
+     enregistrer la photo sur le téléphone** (capture en mémoire, aucune permission de stockage). Elle
+     affiche, pour chacun des 30 derniers jours, si l'OT est *enregistré*, *à relire*, *envoyé en attente*
+     ou *envoyé mais introuvable* : le PC publie dans la boîte, après chaque relève, la liste des jours
+     enregistrés (dossier `OT-etat`, JSON), que le téléphone lit. La boîte elle-même est donc toujours
+     un expéditeur autorisé (les expéditeurs autorisés deviennent facultatifs) ; le PC doit être allumé
+     et l'application ouverte pour traiter les envois.
    - **Veille à côté de l'horloge** : quand la réception par e-mail est active, **fermer la
      fenêtre (croix) ne quitte plus l'app** : elle se cache (plus de bouton dans la barre des
      tâches) et continue de relever la boîte ; une notification Windows signale les OT reçus.
@@ -386,6 +394,7 @@ pas garanti à 100 % → `Ordres de travail.bat` reste la méthode recommandée.
 - `app/config.py` — configuration locale (clé API Gemini)
 - `app/ui/fast_theme.py` — accélère le thème sv-ttk (mêmes images, agrandies au chargement :
   changements d'onglet et redimensionnements 2 à 4 fois plus rapides, apparence identique)
+- `android/` — application Android « OT Envoi » (Kotlin, Compose, CameraX, JavaMail)
 - `app/ui/tray.py` / `app/single_instance.py` / `app/autostart.py` — veille à côté de l'horloge,
   une seule copie de l'app, lancement au démarrage de Windows
 - `app/diagnostics.py` / `app/ui/report_dialog.py` — journal technique des imports et bouton

@@ -77,8 +77,9 @@ class MailSettingsFrame(ttk.LabelFrame):
             row=4, column=1, columnspan=2, sticky="ew", padx=(10, 0), pady=3)
         ttk.Label(
             grid, foreground=TEXT_MUTED, wraplength=640, justify="left",
-            text="Ton adresse personnelle, depuis laquelle tu envoies les photos (plusieurs : sépare par "
-                 "une virgule). Les e-mails venant de toute autre adresse sont ignorés.",
+            text="Facultatif : ton adresse personnelle, depuis laquelle tu envoies des photos par e-mail "
+                 "(plusieurs : sépare par une virgule). La boîte elle-même est toujours autorisée (application "
+                 "Android OT Envoi) ; les e-mails venant de toute autre adresse sont ignorés.",
         ).grid(row=5, column=1, columnspan=2, sticky="w", padx=(10, 0))
 
         ttk.Label(grid, text="Relever la boîte toutes les").grid(row=6, column=0, sticky="w", pady=(8, 3))
@@ -174,9 +175,6 @@ class MailSettingsFrame(ttk.LabelFrame):
             return "Saisis le mot de passe d'application de la boîte."
         if not s["host"]:
             return "Saisis le serveur IMAP (par exemple imap.gmail.com)."
-        if not s["allowed_senders"]:
-            return ("Indique au moins une adresse d'expéditeur autorisée (la tienne) : "
-                    "sans elle, n'importe qui connaissant l'adresse pourrait envoyer des documents.")
         return ""
 
     def _suggest_host(self, _event=None):

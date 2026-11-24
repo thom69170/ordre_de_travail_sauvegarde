@@ -105,8 +105,9 @@ def parse_senders(text: str) -> list[str]:
 
 
 def is_configured(settings: dict) -> bool:
-    return bool(settings["address"] and settings["password"] and settings["host"]
-                and settings["allowed_senders"])
+    # Les expéditeurs autorisés sont facultatifs : la boîte elle-même l'est toujours (application
+    # Android « OT Envoi », qui écrit à la boîte depuis la boîte).
+    return bool(settings["address"] and settings["password"] and settings["host"])
 
 
 def interval_seconds(settings: dict) -> int:
@@ -145,10 +146,12 @@ def _known_ids() -> list[str]:
 
 
 def _remember_id(message_id: str) -> None:
-    ids = _known_ids()
+    state = _read_json(_state_path(), {})
+    ids = state.get("ids", [])
     if message_id not in ids:
         ids.append(message_id)
-    _state_path().write_text(json.dumps({"ids": ids[-STATE_IDS_LIMIT:]}), encoding="utf-8")
+    state["ids"] = ids[-STATE_IDS_LIMIT:]
+    _state_path().write_text(json.dumps(state), encoding="utf-8")
 
 
 def log_event(text: str, level: str = "info") -> None:
@@ -182,11 +185,11 @@ class ReceivedMail:
     def manifest(self) -> Path:
         return self.folder / "mail.json"
 
-    def save_manifest(self, status: str) -> None:
+    def save_manifest(self, status: str, date: str = "") -> None:
         self.manifest.write_text(json.dumps({
             "status": status, "message_id": self.message_id, "sender": self.sender,
             "subject": self.subject, "files": [p.name for p in self.files],
-            "notes": self.notes, "attempts": self.attempts,
+            "notes": self.notes, "attempts": self.attempts, "date": date,
         }, ensure_ascii=False), encoding="utf-8")
 
 
@@ -236,6 +239,17 @@ def discard(mail: ReceivedMail) -> None:
 
 
 # ----------------------------------------------------------------------------- IMAP
+
+def _login(settings: dict):
+    """Connexion authentifiée, sans sélectionner de dossier."""
+    host, port = settings["host"].strip(), int(settings.get("port") or 993)
+    try:
+        conn = imaplib.IMAP4_SSL(host, port, timeout=30) if settings.get("ssl", True) else imaplib.IMAP4(host, port, timeout=30)
+        conn.login(settings["address"].strip(), settings["password"])
+    except (OSError, imaplib.IMAP4.error) as exc:
+        raise MailError(f"Connexion impossible à {host}:{port} ({exc}).") from exc
+    return conn
+
 
 def _connect(settings: dict):
     host, port = settings["host"].strip(), int(settings.get("port") or 993)
@@ -348,7 +362,7 @@ def fetch_new_mails(settings: dict) -> FetchReport:
     """Télécharge les nouveaux messages (non lus) venant d'un expéditeur autorisé. Chaque message
     accepté est marqué lu seulement quand ses pièces jointes et son manifeste sont sur le disque :
     plus rien ne peut se perdre ensuite, même si l'app se ferme au milieu du traitement."""
-    allowed = {a.lower() for a in settings["allowed_senders"]}
+    allowed = {a.lower() for a in settings["allowed_senders"]} | {settings["address"].strip().lower()}
     report = FetchReport()
     conn = _connect(settings)
     try:
@@ -428,6 +442,99 @@ def _mark_seen(conn, uid: bytes) -> None:
         conn.uid("STORE", uid, "+FLAGS", "(\\Seen)")
     except Exception:  # noqa: BLE001
         pass  # sans conséquence : le Message-ID mémorisé évite un second traitement
+
+
+# ----------------------------------------------------------------------------- état publié pour le téléphone
+
+STATE_FOLDER = "OT-etat"
+STATE_DAYS = 400          # jours remontés dans l'état publié
+STATE_KEEP_MESSAGES = 4   # anciens états conservés dans le dossier
+STATE_REFRESH_SECONDS = 12 * 3600  # republié au moins deux fois par jour, même sans changement
+
+
+def review_dates() -> list[str]:
+    """Jours des OT reçus par e-mail qui attendent une relecture sur le PC (ni enregistrés ni abandonnés)."""
+    found: set[str] = set()
+    for folder in inbox_dir().iterdir():
+        data = _read_json(folder / "mail.json", None) if folder.is_dir() else None
+        if data and data.get("status") == "queued" and data.get("date"):
+            found.add(data["date"])
+    return sorted(found)
+
+
+def collect_state() -> tuple[list[str], list[str]]:
+    """(jours dont l'OT est enregistré, jours à relire) - les seules choses que le téléphone apprend."""
+    from datetime import timedelta
+
+    from app import db
+
+    limit = (datetime.now() - timedelta(days=STATE_DAYS)).date().isoformat()
+    saved = sorted({wo.date for wo in db.list_work_orders() if wo.date and wo.date >= limit})
+    review = [d for d in review_dates() if d not in saved]
+    return saved, review
+
+
+def build_state_message(settings: dict, saved: list[str], review: list[str]) -> bytes:
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    address = settings["address"].strip()
+    msg["From"] = address
+    msg["To"] = address
+    msg["Subject"] = "OT-ETAT"
+    msg["Date"] = email.utils.formatdate(localtime=True)
+    msg["Message-ID"] = email.utils.make_msgid(domain="ordres-de-travail.local")  # unique : pas de doublon côté Gmail
+    msg["X-OT-Source"] = "pc"
+    msg.set_content(json.dumps({
+        "v": 1, "generated": datetime.now().isoformat(timespec="seconds"),
+        "dates": saved, "review": review,
+    }, ensure_ascii=False), charset="utf-8")
+    return msg.as_bytes()
+
+
+def publish_state(settings: dict, force: bool = False) -> bool:
+    """Dépose dans la boîte (dossier OT-etat) la liste des OT enregistrés, pour l'application du
+    téléphone. Rien n'est publié si rien n'a changé depuis la dernière fois (sauf toutes les 12 h).
+    Retourne True si un état a été publié. Ne lève jamais : c'est un confort, pas une obligation."""
+    try:
+        saved, review = collect_state()
+        digest = hashlib.sha1(json.dumps([saved, review]).encode()).hexdigest()
+        state = _read_json(_state_path(), {})
+        fresh = time.time() - state.get("state_time", 0) < STATE_REFRESH_SECONDS
+        if not force and state.get("state_hash") == digest and fresh:
+            return False
+        conn = _login(settings)
+        try:
+            conn.create(STATE_FOLDER)  # existe déjà : réponse NO, sans importance
+            typ, _ = conn.append(
+                STATE_FOLDER, "(\\Seen)", imaplib.Time2Internaldate(time.time()),
+                build_state_message(settings, saved, review),
+            )
+            if typ != "OK":
+                return False
+            _prune_state_folder(conn)
+        finally:
+            _quiet_logout(conn)
+        state = _read_json(_state_path(), {})
+        state.update(state_hash=digest, state_time=time.time())
+        _state_path().write_text(json.dumps(state), encoding="utf-8")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log_event(f"État pour le téléphone non publié : {exc}", "warn")
+        return False
+
+
+def _prune_state_folder(conn) -> None:
+    """Ne garde que les derniers états : le téléphone lit le plus récent."""
+    typ, _ = conn.select(STATE_FOLDER)
+    if typ != "OK":
+        return
+    typ, data = conn.uid("SEARCH", None, "ALL")
+    uids = data[0].split() if typ == "OK" and data and data[0] else []
+    for uid in uids[:-STATE_KEEP_MESSAGES]:
+        conn.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
+    if len(uids) > STATE_KEEP_MESSAGES:
+        conn.expunge()
 
 
 # ----------------------------------------------------------------------------- traitement
