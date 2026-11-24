@@ -90,6 +90,27 @@ class MailClientTest {
         assertTrue(target.length() > pages.sumOf { it.size })
     }
 
+    /** Gmail impose le chiffrement (SMTP 465 / IMAP 993) : même chemin de code que la vraie boîte. */
+    @Test
+    fun sendAndReadOverEncryptedConnections() {
+        green.stop()
+        green = GreenMail(arrayOf(ServerSetupTest.SMTPS, ServerSetupTest.IMAPS))
+            .withConfiguration(GreenMailConfiguration.aConfig().withUser(address, address, "secret"))
+        green.start()
+        val secure = MailAccount(
+            address = address, password = "secret",
+            imapHost = "127.0.0.1", imapPort = ServerSetupTest.IMAPS.port,
+            smtpHost = "127.0.0.1", smtpPort = ServerSetupTest.SMTPS.port,
+            secure = true, trustAllCertificates = true,
+        )
+        val client = MailClient(secure)
+        assertTrue(client.test().startsWith("Connexion réussie"))
+        client.send(LocalDate.of(2026, 11, 26), listOf(sampleJpeg(1), sampleJpeg(2)))
+        assertTrue("le message doit arriver par SMTPS", green.waitForIncomingEmail(5000, 1))
+        assertEquals("OT 2026-11-26", green.receivedMessages.single().subject)
+        assertEquals(setOf(LocalDate.of(2026, 11, 26)), client.fetchState(LocalDate.of(2026, 11, 1)).sentDates)
+    }
+
     @Test
     fun sendRequiresAtLeastOnePage() {
         try {

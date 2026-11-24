@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
@@ -11,10 +11,10 @@ android {
 
     defaultConfig {
         applicationId = "fr.notivo.otenvoi"
-        minSdk = 26 // Android 8+ : java.time disponible sans bibliothèque supplémentaire
+        minSdk = 26 // Android 8+ : java.time disponible sans bibliothÃ¨que supplÃ©mentaire
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildTypes {
@@ -22,7 +22,7 @@ android {
             optimization {
                 enable = false
             }
-            // Application personnelle : signée avec la clé de développement, installable directement.
+            // Application personnelle : signÃ©e avec la clÃ© de dÃ©veloppement, installable directement.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -57,18 +57,18 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
 
-    // Appareil photo : capture EN MÉMOIRE (aucun fichier, aucune galerie)
+    // Appareil photo : capture EN MÃ‰MOIRE (aucun fichier, aucune galerie)
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
-    // Envoi (SMTP) et lecture de l'état (IMAP) de la boîte mail
+    // Envoi (SMTP) et lecture de l'Ã©tat (IMAP) de la boÃ®te mail
     implementation(libs.android.mail)
     implementation(libs.android.activation)
 
     testImplementation(libs.junit)
-    // Faux serveurs SMTP + IMAP pour tester l'envoi sans vraie boîte
+    // Faux serveurs SMTP + IMAP pour tester l'envoi sans vraie boÃ®te
     testImplementation(libs.greenmail) {
         exclude(group = "com.sun.mail", module = "javax.mail")
     }

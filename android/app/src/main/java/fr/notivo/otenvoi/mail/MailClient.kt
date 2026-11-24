@@ -40,6 +40,8 @@ data class MailAccount(
     val smtpPort: Int = 465,
     /** SSL dès la connexion (Gmail). Faux seulement pour les tests locaux. */
     val secure: Boolean = true,
+    /** Accepte n'importe quel certificat : UNIQUEMENT pour les faux serveurs des tests (certificat auto-signé). */
+    val trustAllCertificates: Boolean = false,
 )
 
 /** Ce que le PC a publié : jours enregistrés et jours à relire, et quand. */
@@ -86,9 +88,24 @@ class MailClient(private val account: MailAccount) {
             saveChanges()
         }
         try {
-            Transport.send(message)
+            withSmtp(session) { transport -> transport.sendMessage(message, message.allRecipients) }
         } catch (e: MessagingException) {
             throw friendly(e)
+        }
+    }
+
+    /**
+     * Ouvre la connexion SMTP avec l'hôte et le port EXPLICITES, exécute [block], puis la ferme. (Transport.send()
+     * cherche ses réglages sous le protocole « smtp » : avec une connexion chiffrée déclarée sous « smtps »,
+     * il retombait sur localhost:25.)
+     */
+    private fun <T> withSmtp(session: Session, block: (Transport) -> T): T {
+        val transport = session.getTransport("smtp")
+        transport.connect(account.smtpHost, account.smtpPort, account.address, account.password)
+        try {
+            return block(transport)
+        } finally {
+            runCatching { transport.close() }
         }
     }
 
@@ -97,13 +114,7 @@ class MailClient(private val account: MailAccount) {
     /** Vérifie l'envoi (SMTP) ET la lecture (IMAP) sans rien envoyer. Retourne un message de succès. */
     fun test(): String {
         try {
-            val session = smtpSession()
-            val transport = session.getTransport(if (account.secure) "smtps" else "smtp")
-            try {
-                transport.connect(account.smtpHost, account.smtpPort, account.address, account.password)
-            } finally {
-                runCatching { transport.close() }
-            }
+            withSmtp(smtpSession()) { }
             withStore { }
         } catch (e: MessagingException) {
             throw friendly(e)
@@ -168,14 +179,14 @@ class MailClient(private val account: MailAccount) {
 
     private fun smtpSession(): Session {
         val props = Properties()
-        val protocol = if (account.secure) "smtps" else "smtp"
-        props["mail.$protocol.host"] = account.smtpHost
-        props["mail.$protocol.port"] = account.smtpPort.toString()
-        props["mail.$protocol.auth"] = "true"
-        props["mail.$protocol.connectiontimeout"] = "15000"
-        props["mail.$protocol.timeout"] = "30000"
-        props["mail.$protocol.writetimeout"] = "60000"
-        props["mail.transport.protocol"] = protocol
+        props["mail.smtp.host"] = account.smtpHost
+        props["mail.smtp.port"] = account.smtpPort.toString()
+        props["mail.smtp.auth"] = "true"
+        props["mail.smtp.connectiontimeout"] = "15000"
+        props["mail.smtp.timeout"] = "30000"
+        props["mail.smtp.writetimeout"] = "60000"
+        if (account.secure) props["mail.smtp.ssl.enable"] = "true"
+        if (account.trustAllCertificates) props["mail.smtp.ssl.trust"] = "*"
         return Session.getInstance(props, object : Authenticator() {
             override fun getPasswordAuthentication() = PasswordAuthentication(account.address, account.password)
         })
@@ -187,6 +198,7 @@ class MailClient(private val account: MailAccount) {
         val props = Properties()
         props["mail.$protocol.connectiontimeout"] = "15000"
         props["mail.$protocol.timeout"] = "30000"
+        if (account.trustAllCertificates) props["mail.$protocol.ssl.trust"] = "*"
         val store = Session.getInstance(props).getStore(protocol)
         store.connect(account.imapHost, account.imapPort, account.address, account.password)
         try {
