@@ -38,6 +38,24 @@ object PageEncoder {
         return out.toByteArray()
     }
 
+    /**
+     * Rotation à appliquer à une photo déjà prise (galerie), d'après son orientation EXIF. Lue dans les octets
+     * en mémoire : rien n'est copié ni écrit.
+     */
+    fun exifRotation(jpeg: ByteArray): Int = try {
+        val orientation = android.media.ExifInterface(java.io.ByteArrayInputStream(jpeg)).getAttributeInt(
+            android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL,
+        )
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90, android.media.ExifInterface.ORIENTATION_TRANSPOSE -> 90
+            android.media.ExifInterface.ORIENTATION_ROTATE_180, android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180
+            android.media.ExifInterface.ORIENTATION_ROTATE_270, android.media.ExifInterface.ORIENTATION_TRANSVERSE -> 270
+            else -> 0
+        }
+    } catch (e: Exception) {
+        0
+    }
+
     /** Miniature pour l'aperçu à l'écran (décodée directement en petit). */
     fun thumbnail(jpeg: ByteArray, maxSide: Int = 320): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

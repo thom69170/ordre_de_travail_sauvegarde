@@ -16,10 +16,27 @@ import javax.crypto.spec.GCMParameterSpec
  * coffre matériel d'Android (Keystore) : le fichier de préférences ne contient qu'un texte chiffré
  * illisible hors de cet appareil. Ce sont les SEULES données que l'application garde sur le téléphone.
  */
-class SecureStore(context: Context) {
+class SecureStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("otenvoi", Context.MODE_PRIVATE)
 
+    /**
+     * Version de développement uniquement (jamais dans la version finale) : un compte de test sur serveurs
+     * locaux, déposé dans « otenvoi_debug » via adb, pour essayer l'envoi sans toucher à la vraie boîte.
+     */
+    private fun testAccount(): MailAccount? {
+        val debuggable = context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+        if (!debuggable) return null
+        val p = context.getSharedPreferences("otenvoi_debug", Context.MODE_PRIVATE)
+        val address = p.getString("address", null) ?: return null
+        return MailAccount(
+            address = address, password = p.getString("password", "").orEmpty(),
+            imapHost = p.getString("host", "127.0.0.1")!!, imapPort = p.getInt("imap_port", 3143),
+            smtpHost = p.getString("host", "127.0.0.1")!!, smtpPort = p.getInt("smtp_port", 3025), secure = false,
+        )
+    }
+
     fun load(): MailAccount? {
+        testAccount()?.let { return it }
         val address = prefs.getString("address", null) ?: return null
         val encrypted = prefs.getString("password", null) ?: return null
         val password = runCatching { decrypt(encrypted) }.getOrNull() ?: return null

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -24,6 +25,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -62,6 +65,9 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.util.concurrent.Executors
 
+/** Pages au maximum par envoi (un OT en compte une ou deux ; la marge évite un e-mail énorme). */
+private const val MAX_PAGES = 6
+
 /**
  * Appareil photo intégré. Chaque page est gardée EN MÉMOIRE (octets JPEG), jamais écrite dans un fichier ni
  * dans la galerie ; elle disparaît dès l'envoi réussi ou en quittant l'écran.
@@ -82,6 +88,30 @@ fun CaptureScreen(account: MailAccount, date: LocalDate, onClose: (sent: Boolean
     var torch by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
+
+    // Photos déjà présentes dans la galerie : le sélecteur du système ne donne accès qu'à celles qu'on choisit
+    // (aucune permission de stockage). Elles sont lues en mémoire ; rien n'est copié ni enregistré.
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_PAGES),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        error = null
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                uris.map { uri ->
+                    runCatching {
+                        val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: throw IllegalStateException("fichier inaccessible")
+                        PageEncoder.encode(raw, PageEncoder.exifRotation(raw))
+                    }
+                }
+            }
+            for (result in loaded) {
+                if (pages.size >= MAX_PAGES) break
+                result.onSuccess { pages.add(it) }.onFailure { error = "Photo de la galerie illisible : ${it.message}" }
+            }
+        }
+    }
 
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER } }
     val imageCapture = remember { ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build() }
@@ -111,6 +141,7 @@ fun CaptureScreen(account: MailAccount, date: LocalDate, onClose: (sent: Boolean
 
     fun takePhoto() {
         if (capturing || sending) return
+        if (pages.size >= MAX_PAGES) { error = "$MAX_PAGES pages au maximum par envoi."; return }
         capturing = true; error = null
         imageCapture.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
@@ -143,8 +174,8 @@ fun CaptureScreen(account: MailAccount, date: LocalDate, onClose: (sent: Boolean
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 28.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().navigationBarsPadding()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(dayLabel(date), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Text("Chaque page entière, à plat, bien éclairée", color = Color(0xFFCCCCCC), fontSize = 12.sp)
@@ -184,19 +215,23 @@ fun CaptureScreen(account: MailAccount, date: LocalDate, onClose: (sent: Boolean
 
         error?.let { Text(it, color = Color(0xFFFFB4A9), modifier = Modifier.padding(horizontal = 16.dp), fontSize = 13.sp) }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(onClick = { torch = !torch; camera?.cameraControl?.enableTorch(torch) }) {
-                Text(if (torch) "Lampe ✓" else "Lampe", color = Color.White)
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = { torch = !torch; camera?.cameraControl?.enableTorch(torch) }, enabled = granted) {
+                    Text(if (torch) "Lampe ✓" else "Lampe", color = Color.White)
+                }
+                OutlinedButton(
+                    onClick = { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    enabled = !sending && pages.size < MAX_PAGES,
+                ) { Text("Choisir dans la galerie", color = Color.White) }
             }
-            Button(onClick = { takePhoto() }, enabled = granted && !capturing && !sending, modifier = Modifier.weight(1f).height(52.dp)) {
-                Text(if (capturing) "…" else "Photographier")
-            }
-            Button(onClick = { send() }, enabled = pages.isNotEmpty() && !sending, modifier = Modifier.height(52.dp)) {
-                Text(if (sending) "Envoi…" else "Envoyer (${pages.size})")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { takePhoto() }, enabled = granted && !capturing && !sending, modifier = Modifier.weight(1f).height(52.dp)) {
+                    Text(if (capturing) "…" else "Photographier")
+                }
+                Button(onClick = { send() }, enabled = pages.isNotEmpty() && !sending, modifier = Modifier.height(52.dp)) {
+                    Text(if (sending) "Envoi…" else "Envoyer (${pages.size})")
+                }
             }
         }
     }

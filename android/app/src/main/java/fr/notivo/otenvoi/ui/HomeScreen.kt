@@ -7,9 +7,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -43,10 +46,21 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private const val DAYS_SHOWN = 30
+private const val PAST_DAYS = 30
+/** Les OT sont publiés quelques jours à l'avance : on peut aussi envoyer jusqu'à J+7. */
+private const val FUTURE_DAYS = 7
 private val DAY_FORMAT = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.FRENCH)
 
 fun dayLabel(date: LocalDate): String = date.format(DAY_FORMAT).replaceFirstChar { it.uppercase() }
+
+/** « aujourd'hui », « demain »… pour les jours proches. */
+fun relativeTag(day: LocalDate, today: LocalDate): String? = when (day.toEpochDay() - today.toEpochDay()) {
+    0L -> "aujourd'hui"
+    1L -> "demain"
+    -1L -> "hier"
+    in 2L..FUTURE_DAYS.toLong() -> "dans ${day.toEpochDay() - today.toEpochDay()} jours"
+    else -> null
+}
 
 /** Liste des derniers jours avec l'état de chaque ordre de travail, et le bouton pour le photographier. */
 @Composable
@@ -58,7 +72,10 @@ fun HomeScreen(
 ) {
     val scope = rememberCoroutineScope()
     val today = remember { LocalDate.now() }
-    val days = remember(today) { (0 until DAYS_SHOWN).map { today.minusDays(it.toLong()) } }
+    // De J+7 (en haut) jusqu'à 30 jours en arrière.
+    val days = remember(today) { (-FUTURE_DAYS until PAST_DAYS).map { today.minusDays(it.toLong()) } }
+    // La liste s'ouvre sur aujourd'hui, avec deux jours à venir juste au-dessus ; le reste se découvre en remontant.
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = FUTURE_DAYS - 2)
     var state by remember { mutableStateOf<MailState?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -68,7 +85,7 @@ fun HomeScreen(
         loading = true; error = null
         scope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { MailClient(account).fetchState(today.minusDays(DAYS_SHOWN.toLong() + 5)) }
+                runCatching { MailClient(account).fetchState(today.minusDays(PAST_DAYS.toLong() + 5)) }
             }
             loading = false
             result.onSuccess { state = it }.onFailure { error = it.message ?: "Impossible de lire la boîte mail." }
@@ -78,8 +95,8 @@ fun HomeScreen(
 
     val statuses = DayStatus.merge(days, state)
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(28.dp))
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp)) {
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Mes ordres de travail", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = { refresh() }, enabled = !loading) { Text("Actualiser") }
@@ -108,10 +125,10 @@ fun HomeScreen(
             )
         }
         Spacer(Modifier.height(6.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
             items(days) { day ->
                 val dayState = statuses[day] ?: DayState.NONE
-                DayRow(day, dayState, onClick = {
+                DayRow(day, relativeTag(day, today), dayState, onClick = {
                     if (dayState == DayState.SAVED) confirmResend = day else onCapture(day)
                 })
             }
@@ -131,7 +148,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun DayRow(day: LocalDate, state: DayState, onClick: () -> Unit) {
+private fun DayRow(day: LocalDate, tag: String?, state: DayState, onClick: () -> Unit) {
     val (text, color) = when (state) {
         DayState.SAVED -> "✓ Enregistré sur le PC" to Color(0xFF0F7B0F)
         DayState.REVIEW -> "⚠ À relire sur le PC" to Color(0xFF8A5300)
@@ -144,6 +161,7 @@ private fun DayRow(day: LocalDate, state: DayState, onClick: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(dayLabel(day), fontWeight = FontWeight.SemiBold)
                 Text(text, color = color, fontSize = 13.sp)
+                if (tag != null) Text(tag.replaceFirstChar { it.uppercase() }, color = Color.Gray, fontSize = 12.sp)
             }
             if (state == DayState.NONE) {
                 Button(onClick = onClick) { Text("Photographier") }

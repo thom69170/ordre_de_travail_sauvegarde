@@ -13,8 +13,8 @@ android {
         applicationId = "fr.notivo.otenvoi"
         minSdk = 26 // Android 8+ : java.time disponible sans bibliothèque supplémentaire
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     buildTypes {

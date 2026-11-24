@@ -9,8 +9,10 @@ jour si l'OT est déjà enregistré sur le PC. **Aucune photo n'est enregistrée
    autorise l'installation depuis cette source si Android le demande.
 2. Au premier lancement, saisis l'adresse de la boîte dédiée et son **mot de passe d'application**
    (16 lettres, créé sur <https://myaccount.google.com/apppasswords>), puis **Tester** et **Enregistrer**.
-3. L'écran principal liste les 30 derniers jours. Appuie sur **Photographier** pour un jour : l'appareil photo
-   s'ouvre, prends chaque page (une ou deux), vérifie les miniatures (✕ pour en retirer), puis **Envoyer**.
+3. L'écran principal liste les jours de **J+7 à J-29** (les OT sont publiés quelques jours à l'avance). Appuie
+   sur **Photographier** pour un jour : l'appareil photo s'ouvre, prends chaque page (une ou deux), vérifie les
+   miniatures (✕ pour en retirer), puis **Envoyer**. **Choisir dans la galerie** ajoute des photos déjà prises
+   (jusqu'à 6 pages au total) : elles sont lues en mémoire, sans être copiées.
 4. L'état de chaque jour :
    - **✓ Enregistré sur le PC** — l'OT est dans l'application du PC ;
    - **⚠ À relire sur le PC** — le PC a lu l'OT mais attend ta relecture (onglet Importer) ;
@@ -38,6 +40,9 @@ toutes les 12 h. **Le PC doit être allumé, application ouverte, pour traiter l
   (`PageEncoder`), jointe à l'e-mail à partir de ces octets, et oubliée dès l'envoi ou en quittant l'écran.
 - Le code n'utilise **aucune API de fichier, de cache ni de galerie** (vérifié par recherche dans les sources) et le
   manifeste ne déclare **que** `INTERNET` et `CAMERA` : l'application n'a même pas le droit d'écrire dans le stockage.
+- La galerie passe par le **sélecteur de photos du système** : l'application n'obtient que les photos que tu
+  choisis, sans permission de stockage. (Parcourir la galerie fait générer des vignettes au système lui-même,
+  dans son propre cache : ce ne sont pas des copies faites par l'application.)
 - Les captures d'écran sont **bloquées** dans la version finale (`FLAG_SECURE`) : une capture d'écran serait
   enregistrée dans la galerie du téléphone. Les sauvegardes cloud sont désactivées.
 - Seules données gardées : l'adresse de la boîte et son mot de passe d'application, **chiffré** avec une clé du
@@ -57,6 +62,20 @@ gradlew testDebugUnitTest    # tests
 Le fichier `local.properties` (chemin du SDK, non versionné) doit contenir par exemple
 `sdk.dir=C\:/Users/<toi>/AppData/Local/Android/Sdk`. L'APK de la version finale est signé avec la clé de
 développement : prévu pour un usage personnel.
+
+## Piège connu : « mailcap »
+
+Sur Android, les fichiers `META-INF/mailcap` de la bibliothèque de messagerie ne sont pas chargés. Sans la
+déclaration en dur faite dans `MailClient` (bloc `init` du companion), `getContent()` renvoie un flux brut au lieu du
+texte (l'état du PC n'est alors pas lu) et l'envoi d'un message à pièces jointes échoue. Les tests sur PC ne le voient
+pas (les fichiers sont dans le classpath) : seul un essai sur téléphone le révèle.
+
+## Essayer sur un téléphone sans vraie boîte
+
+`DeviceServer` (test, inactif sans `DEVICE_SERVER=1`) lance un faux serveur SMTP/IMAP sur le PC et y publie un état
+« du PC ». Avec le téléphone en USB (débogage activé) : `adb reverse tcp:3025 tcp:3025` et `tcp:3143 tcp:3143`, puis
+déposer un compte de test dans `shared_prefs/otenvoi_debug.xml` (lu **uniquement** par une version de développement :
+`adb shell run-as fr.notivo.otenvoi ...`). Le message reçu est sauvegardé dans `build/device-artifacts/`.
 
 ## Tests
 

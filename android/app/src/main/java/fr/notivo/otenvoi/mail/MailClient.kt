@@ -6,7 +6,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Date
 import java.util.Properties
+import javax.activation.CommandMap
 import javax.activation.DataHandler
+import javax.activation.MailcapCommandMap
 import javax.mail.AuthenticationFailedException
 import javax.mail.Authenticator
 import javax.mail.FetchProfile
@@ -145,11 +147,18 @@ class MailClient(private val account: MailAccount) {
 
     private fun readPcState(store: Store): PcState? {
         val folder = store.getFolder(Protocol.STATUS_FOLDER)
+        trace("dossier ${Protocol.STATUS_FOLDER} existe=${folder.exists()}")
         if (!folder.exists()) return null
         folder.open(Folder.READ_ONLY)
         try {
-            val newest = folder.messages.maxByOrNull { (it.sentDate ?: it.receivedDate)?.time ?: 0L } ?: return null
-            return parseState(textOf(newest))
+            val all = folder.messages
+            trace("messages dans le dossier = ${all.size}")
+            val newest = all.maxByOrNull { (it.sentDate ?: it.receivedDate)?.time ?: 0L } ?: return null
+            val content = newest.content
+            trace("contenu : classe=${content?.javaClass?.name} type=${newest.contentType}")
+            val text = textOf(newest)
+            trace("texte lu : ${text.length} caracteres")
+            return parseState(text).also { trace("etat lu = ${it != null}") }
         } finally {
             runCatching { folder.close(false) }
         }
@@ -187,6 +196,11 @@ class MailClient(private val account: MailAccount) {
         }
     }
 
+    /** Trace technique (aucune donnée personnelle) : visible avec « adb logcat -s OTENVOI ». */
+    private fun trace(message: String) {
+        runCatching { android.util.Log.d("OTENVOI", message) }
+    }
+
     private fun friendly(e: MessagingException): MailException {
         val root = generateSequence<Throwable>(e) { it.cause }.last()
         val text = when {
@@ -202,6 +216,19 @@ class MailClient(private val account: MailAccount) {
     }
 
     companion object {
+        init {
+            // Sur Android, les fichiers META-INF/mailcap de la bibliothèque ne sont pas chargés : sans cette
+            // déclaration, getContent() renvoie un flux brut au lieu du texte et l'envoi d'un message à pièces
+            // jointes échoue (« no object DCH for MIME type multipart/mixed »). Déclaré en dur, ça marche partout.
+            val mailcap = MailcapCommandMap()
+            mailcap.addMailcap("text/plain;; x-java-content-handler=com.sun.mail.handlers.text_plain")
+            mailcap.addMailcap("text/html;; x-java-content-handler=com.sun.mail.handlers.text_html")
+            mailcap.addMailcap("text/xml;; x-java-content-handler=com.sun.mail.handlers.text_xml")
+            mailcap.addMailcap("multipart/*;; x-java-content-handler=com.sun.mail.handlers.multipart_mixed")
+            mailcap.addMailcap("message/rfc822;; x-java-content-handler=com.sun.mail.handlers.message_rfc822")
+            CommandMap.setDefaultCommandMap(mailcap)
+        }
+
         /** Lit le JSON publié par le PC. Tolérant : un champ manquant ou une date invalide est ignoré. */
         fun parseState(json: String): PcState? {
             val obj = runCatching { JSONObject(json) }.getOrNull() ?: return null
