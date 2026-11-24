@@ -102,6 +102,8 @@ fun HomeScreen(
             TextButton(onClick = { refresh() }, enabled = !loading) { Text("Actualiser") }
             TextButton(onClick = onSettings) { Text("Réglages") }
         }
+        // Les photos partent DANS cette boîte : l'afficher évite de les envoyer dans la mauvaise.
+        Text("Envoi vers : ${account.address}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F1FB)),
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

@@ -71,7 +71,12 @@ fun SetupScreen(
             "Envoie tes ordres de travail en photo dans la boîte mail dédiée. Les photos ne sont jamais " +
                 "enregistrées sur ce téléphone : elles partent directement par e-mail.",
         )
-        Text("Boîte mail dédiée", fontWeight = FontWeight.SemiBold)
+        Text("Boîte mail DÉDIÉE aux ordres de travail", fontWeight = FontWeight.SemiBold)
+        Text(
+            "Les photos sont envoyées DANS cette boîte (de la boîte à elle-même) : mets ici la même adresse que celle " +
+                "réglée dans l'application du PC, pas ton adresse personnelle.",
+            fontSize = 13.sp, color = Color(0xFF8A5300),
+        )
         OutlinedTextField(
             value = address, onValueChange = { address = it }, singleLine = true,
             label = { Text("Adresse (ex. ma.boite@gmail.com)") },
