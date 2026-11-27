@@ -44,14 +44,30 @@ data class MailAccount(
     val trustAllCertificates: Boolean = false,
 )
 
-/** Ce que le PC a publié : jours enregistrés et jours à relire, et quand. */
-data class PcState(val savedDates: Set<LocalDate>, val reviewDates: Set<LocalDate>, val generatedAt: String?)
+/**
+ * Ce que le PC a publié : jours enregistrés, jours à relire, et quand. [restDates] : jours de repos notés
+ * sur le PC (null si l'application du PC est trop ancienne pour les connaître).
+ */
+data class PcState(
+    val savedDates: Set<LocalDate>,
+    val reviewDates: Set<LocalDate>,
+    val generatedAt: String?,
+    val restDates: Set<LocalDate>? = null,
+)
+
+/** Dernier message de repos envoyé pour un jour : [rest] vrai = en repos, faux = repos annulé. */
+data class RestMark(val rest: Boolean, val at: Long)
 
 /**
  * sentAt : pour chaque jour envoyé, l'heure (millisecondes) de réception du dernier envoi ;
- * pc : état publié par le PC (null s'il n'a jamais répondu).
+ * pc : état publié par le PC (null s'il n'a jamais répondu) ;
+ * restMarks : dernier message de repos de chaque jour.
  */
-data class MailState(val sentAt: Map<LocalDate, Long>, val pc: PcState?) {
+data class MailState(
+    val sentAt: Map<LocalDate, Long>,
+    val pc: PcState?,
+    val restMarks: Map<LocalDate, RestMark> = emptyMap(),
+) {
     val sentDates: Set<LocalDate> get() = sentAt.keys
 }
 
@@ -94,6 +110,26 @@ class MailClient(private val account: MailAccount) {
         }
     }
 
+    /** Annonce au PC un jour de repos ([rest] vrai) ou annule cette annonce. */
+    fun sendRest(date: LocalDate, rest: Boolean) {
+        val session = smtpSession()
+        val message = MimeMessage(session).apply {
+            val me = InternetAddress(account.address)
+            setFrom(me)
+            setRecipient(Message.RecipientType.TO, me)
+            setSubject(Protocol.restSubjectFor(date, rest), "UTF-8")
+            setHeader(Protocol.SOURCE_HEADER, Protocol.SOURCE_VALUE)
+            val what = if (rest) "Jour de repos" else "Repos annulé"
+            setText("$what le $date, envoyé depuis OT Envoi.", "UTF-8")
+            saveChanges()
+        }
+        try {
+            withSmtp(session) { transport -> transport.sendMessage(message, message.allRecipients) }
+        } catch (e: MessagingException) {
+            throw friendly(e)
+        }
+    }
+
     /**
      * Ouvre la connexion SMTP avec l'hôte et le port EXPLICITES, exécute [block], puis la ferme. (Transport.send()
      * cherche ses réglages sous le protocole « smtp » : avec une connexion chiffrée déclarée sous « smtps »,
@@ -125,32 +161,37 @@ class MailClient(private val account: MailAccount) {
     // ------------------------------------------------------------------ état
 
     /**
-     * Envois déjà faits (objets « OT AAAA-MM-JJ » reçus depuis [since]) et état publié par le PC.
+     * Envois et repos déjà annoncés (messages reçus depuis [since]) et état publié par le PC.
      * Seuls les en-têtes sont lus : aucune photo n'est téléchargée.
      */
     fun fetchState(since: LocalDate): MailState {
         try {
-            return withStore { store -> MailState(readSentDates(store, since), readPcState(store)) }
+            return withStore { store -> readInbox(store, since).copy(pc = readPcState(store)) }
         } catch (e: MessagingException) {
             throw friendly(e)
         }
     }
 
-    private fun readSentDates(store: Store, since: LocalDate): Map<LocalDate, Long> {
+    private fun readInbox(store: Store, since: LocalDate): MailState {
         val inbox = store.getFolder("INBOX")
         inbox.open(Folder.READ_ONLY)
         try {
             val start = Date.from(since.atStartOfDay(ZoneId.systemDefault()).toInstant())
             val messages = inbox.search(ReceivedDateTerm(ComparisonTerm.GE, start))
-            if (messages.isEmpty()) return emptyMap()
+            if (messages.isEmpty()) return MailState(emptyMap(), null)
             inbox.fetch(messages, FetchProfile().apply { add(FetchProfile.Item.ENVELOPE) })
             val latest = mutableMapOf<LocalDate, Long>()
+            val marks = mutableMapOf<LocalDate, RestMark>()
+            // Dans l'ordre d'arrivée : à la même seconde, le message le plus récent l'emporte.
             for (message in messages) {
-                val day = Protocol.dateFromSubject(message.subject) ?: continue
+                val subject = message.subject
                 val at = (message.receivedDate ?: message.sentDate)?.time ?: 0L
-                latest[day] = maxOf(latest[day] ?: 0L, at)
+                Protocol.dateFromSubject(subject)?.let { day -> latest[day] = maxOf(latest[day] ?: 0L, at) }
+                Protocol.restFromSubject(subject)?.let { (day, rest) ->
+                    if (at >= (marks[day]?.at ?: 0L)) marks[day] = RestMark(rest, at)
+                }
             }
-            return latest
+            return MailState(latest, null, marks)
         } finally {
             runCatching { inbox.close(false) }
         }
@@ -250,7 +291,10 @@ class MailClient(private val account: MailAccount) {
                     runCatching { LocalDate.parse(array.getString(it)) }.getOrNull()
                 }.toSet()
             }
-            return PcState(dates("dates"), dates("review"), obj.optString("generated").ifBlank { null })
+            return PcState(
+                dates("dates"), dates("review"), obj.optString("generated").ifBlank { null },
+                if (obj.has("rest")) dates("rest") else null,
+            )
         }
 
         private fun textOf(message: Message): String {

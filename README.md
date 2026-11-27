@@ -80,10 +80,15 @@ statistiques par semaine / mois / année.
      envoie la photo de l'OT à cette boîte (plusieurs pages = plusieurs pièces jointes du même
      e-mail ; un e-mail = un OT) : tant que l'app est ouverte, elle relève la boîte toutes les N
      minutes (et une fois au démarrage, pour récupérer ce qui est arrivé app fermée), lit l'OT avec
-     Gemini et **l'enregistre toute seule** quand la lecture est nette. Si quoi que ce soit est
-     douteux (avertissement de lecture, date illisible, pause repas ambiguë, OT déjà enregistré à
-     cette date, pas de clé Gemini...), l'OT rejoint la file de l'onglet Importer **déjà lu**, pour
-     relecture. Un bandeau en bas de la fenêtre résume ce qui vient d'arriver (clic = onglet
+     Gemini et **l'enregistre toute seule** quand la lecture est nette. Si quelque chose est
+     douteux (avertissement de lecture, date illisible, pause repas ambiguë...), elle **relit l'OT,
+     jusqu'à trois lectures en tout** ; après une lecture douteuse, une lecture nette n'est
+     enregistrée que si **ses valeurs en confirment une autre** (relire jusqu'à tomber sur une
+     lecture « qui passe » ne doit pas faire enregistrer un chiffre faux). Sinon l'OT rejoint la
+     file de l'onglet Importer **déjà lu**, pour relecture. Quand Gemini est injoignable (panne,
+     quota, réseau), l'envoi est réessayé aux deux relèves suivantes avant de demander une
+     relecture. Sans clé Gemini, ou pour un OT identique déjà enregistré, relire ne changerait
+     rien : relecture directe. Un bandeau en bas de la fenêtre résume ce qui vient d'arriver (clic = onglet
      Importer) et les Paramètres gardent le journal des dernières activités. Les e-mails sont
      marqués lus mais **jamais supprimés ni déplacés** ; les photos HEIC (iPhone) ne sont pas
      lues. Le mot de passe est stocké en clair dans `config.json`, comme la clé Gemini, et n'est pas
@@ -92,9 +97,12 @@ statistiques par semaine / mois / année.
    - **Application Android « OT Envoi »** (dossier `android/`, voir son README) : photographie
      l'OT avec l'appareil photo intégré et l'envoie directement dans cette boîte mail, **sans
      enregistrer la photo sur le téléphone** (capture en mémoire, aucune permission de stockage). Elle
-     affiche, pour chacun des 30 derniers jours, si l'OT est *enregistré*, *à relire*, *envoyé en attente*
-     ou *envoyé mais introuvable* : le PC publie dans la boîte, après chaque relève, la liste des jours
-     enregistrés (dossier `OT-etat`, JSON), que le téléphone lit. La boîte elle-même est donc toujours
+     affiche, de J+7 à J-29, si l'OT est *enregistré*, *à relire*, *envoyé en attente* ou *envoyé
+     mais introuvable* : le PC publie dans la boîte la liste des jours enregistrés, à relire et de
+     repos (dossier `OT-etat`, JSON), que le téléphone lit. Le téléphone permet aussi de noter un
+     **jour de repos** (bouton *En repos*, annulable) : le PC l'affiche dans l'**Historique** (ligne
+     « Repos », que *Supprimer* retire) et le compte dans les **Statistiques** ; un OT enregistré à
+     cette date remplace le repos. La boîte elle-même est donc toujours
      un expéditeur autorisé (les expéditeurs autorisés deviennent facultatifs) ; le PC doit être allumé
      et l'application ouverte pour traiter les envois.
    - **Veille à côté de l'horloge** : quand la réception par e-mail est active, **fermer la

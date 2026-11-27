@@ -95,6 +95,11 @@ CREATE TABLE IF NOT EXISTS bulletins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bulletins_period ON bulletins(period_start);
+
+CREATE TABLE IF NOT EXISTS rest_days (
+    date TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -164,6 +169,8 @@ def insert_work_order(wo: WorkOrder) -> int:
         )
         work_order_id = cur.lastrowid
         _replace_trajets(conn, work_order_id, wo.date, wo.trajets)
+        # Un jour qui a un OT n'est plus un repos (rappelé au travail, repos noté par erreur...).
+        conn.execute("DELETE FROM rest_days WHERE date = ?", (wo.date,))
         return work_order_id
 
 
@@ -182,11 +189,36 @@ def update_work_order(wo: WorkOrder) -> None:
             f"UPDATE work_orders SET {assignments}, trajets_up_to_date = 1 WHERE id = ?", values
         )
         _replace_trajets(conn, wo.id, wo.date, wo.trajets)
+        conn.execute("DELETE FROM rest_days WHERE date = ?", (wo.date,))
 
 
 def delete_work_order(work_order_id: int) -> None:
     with connect() as conn:
         conn.execute("DELETE FROM work_orders WHERE id = ?", (work_order_id,))
+
+
+def set_rest_day(date: str) -> bool:
+    """Note un jour de repos. Refusé (False) si un OT est enregistré ce jour-là : l'OT fait foi."""
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM work_orders WHERE date = ?", (date,)).fetchone():
+            return False
+        conn.execute(
+            "INSERT OR IGNORE INTO rest_days (date, created_at) VALUES (?, ?)",
+            (date, datetime.now(timezone.utc).isoformat()),
+        )
+    return True
+
+
+def delete_rest_day(date: str) -> None:
+    with connect() as conn:
+        conn.execute("DELETE FROM rest_days WHERE date = ?", (date,))
+
+
+def list_rest_days() -> list[str]:
+    """Jours de repos (AAAA-MM-JJ), du plus récent au plus ancien."""
+    with connect() as conn:
+        rows = conn.execute("SELECT date FROM rest_days ORDER BY date DESC").fetchall()
+    return [r["date"] for r in rows]
 
 
 def _replace_trajets(conn: sqlite3.Connection, work_order_id: int, date: str, labels: list[str]) -> None:

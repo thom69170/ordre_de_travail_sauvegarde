@@ -28,7 +28,7 @@ import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeBodyPart
 import javax.mail.internet.MimeMessage
 
-/** Envoi et lecture de l'état contre de faux serveurs SMTP/IMAP locaux : aucune vraie boîte n'est touchée. */
+/** Envoi (OT et repos) et lecture de l'état contre de faux serveurs SMTP/IMAP locaux : aucune vraie boîte n'est touchée. */
 class MailClientTest {
     private val address = "boite@test.local"
     private lateinit var green: GreenMail
@@ -109,6 +109,31 @@ class MailClientTest {
         assertTrue("le message doit arriver par SMTPS", green.waitForIncomingEmail(5000, 1))
         assertEquals("OT 2026-11-26", green.receivedMessages.single().subject)
         assertEquals(setOf(LocalDate.of(2026, 11, 26)), client.fetchState(LocalDate.of(2026, 11, 1)).sentDates)
+    }
+
+    @Test
+    fun restIsAnnouncedThenCancelled() {
+        val client = MailClient(account())
+        val day = LocalDate.of(2026, 11, 28)
+        client.sendRest(day, true)
+        assertTrue(green.waitForIncomingEmail(5000, 1))
+
+        val message = green.receivedMessages.single() as MimeMessage
+        assertEquals("REPOS 2026-11-28", message.subject)
+        assertEquals(address, (message.allRecipients.single() as InternetAddress).address)
+        assertEquals("android", message.getHeader("X-OT-Source")?.firstOrNull())
+        assertTrue("aucune pièce jointe", message.isMimeType("text/plain"))
+        // message d'exemple relu ensuite par le code du PC
+        val target = File("build/test-artifacts/ot_android_rest_sample.eml").apply { parentFile.mkdirs() }
+        FileOutputStream(target).use { message.writeTo(it) }
+
+        val marked = client.fetchState(LocalDate.of(2026, 11, 1))
+        assertEquals(true, marked.restMarks[day]?.rest)
+        assertTrue("un repos n'est pas un envoi d'OT", marked.sentAt.isEmpty())
+
+        client.sendRest(day, false)
+        assertTrue(green.waitForIncomingEmail(5000, 2))
+        assertEquals(false, client.fetchState(LocalDate.of(2026, 11, 1)).restMarks[day]?.rest)
     }
 
     @Test

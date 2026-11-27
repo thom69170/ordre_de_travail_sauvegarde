@@ -1,5 +1,5 @@
 """Onglet 'Historique' : liste des ordres de travail enregistrés (tableau triable), détail du jour
-sélectionné, modification, suppression et export."""
+sélectionné, modification, suppression et export. Les jours de repos y figurent aussi."""
 from __future__ import annotations
 
 import tkinter as tk
@@ -8,12 +8,14 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from app import db, storage
-from app.models import split_trajet
+from app.models import WorkOrder, split_trajet
 from app.stats import FRENCH_MONTHS, SHORT_WEEKDAYS, format_km, hours_to_hm, long_date
 from app.ui.common import BG, TEXT_MUTED, WARN_BG, WARN_FG
 
 ALL_MONTHS = "Tous les mois"
 ZEBRA_BG = "#f1f1f1"
+REST_BG = "#e7f3ea"
+REST_PREFIX = "repos:"  # identifiant de ligne d'un jour de repos (les OT ont leur numéro)
 DETAIL_WIDTH = 350
 
 
@@ -134,6 +136,7 @@ class HistoryTab(ttk.Frame):
         self._sort_column, self._sort_reverse = "date", True
         self.tree.tag_configure("odd", background=ZEBRA_BG)
         self.tree.tag_configure("last_minute", background=WARN_BG)
+        self.tree.tag_configure("rest", background=REST_BG, foreground=TEXT_MUTED)
         self.tree.bind("<Double-1>", lambda e: self.edit_selected())
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._show_detail())
         scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
@@ -178,6 +181,14 @@ class HistoryTab(ttk.Frame):
         self.detail_flag.pack_forget()
         self.detail_text.configure(state="normal")
         self.detail_text.delete("1.0", "end")
+        rest_day = self._selected_rest_day()
+        if rest_day:
+            d = _parse(rest_day)
+            self.detail_title.config(text=long_date(d).capitalize() if d else rest_day)
+            self.detail_sub.config(text="Jour de repos (aucun ordre de travail).")
+            self.detail_list_title.config(text="")
+            self.detail_text.configure(state="disabled")
+            return
         if wo is None:
             self.detail_title.config(text="Aucun jour sélectionné")
             self.detail_sub.config(text="Clique sur une ligne du tableau pour voir son détail.")
@@ -281,12 +292,15 @@ class HistoryTab(ttk.Frame):
 
     def refresh(self):
         all_orders = db.list_work_orders()
-        years = sorted({wo.date[:4] for wo in all_orders if wo.date}, reverse=True)
+        # Un jour de repos = une ligne sans chiffres (un WorkOrder sans numéro, pour le filtre et le tri).
+        all_rows = all_orders + [WorkOrder(date=day) for day in db.list_rest_days()]
+        years = sorted({wo.date[:4] for wo in all_rows if wo.date}, reverse=True)
         self.year_combo["values"] = ["Toutes"] + years
         if self.year_var.get() not in self.year_combo["values"]:
             self.year_var.set("Toutes")
 
-        previous_selection = self._selected_id()
+        previous = self.tree.selection()
+        previous_selection = previous[0] if previous else ""
         for row in self.tree.get_children():
             self.tree.delete(row)
 
@@ -294,14 +308,15 @@ class HistoryTab(ttk.Frame):
         year = self.year_var.get()
         month = self.month_var.get()
         month_number = f"{FRENCH_MONTHS.index(month) + 1:02d}" if month != ALL_MONTHS else ""
-        orders = [
-            wo for wo in all_orders
+        rows = [
+            wo for wo in all_rows
             if (year == "Toutes" or wo.date[:4] == year)
             and (not month_number or wo.date[5:7] == month_number)
         ]
-        orders.sort(key=lambda wo: wo.date, reverse=True)  # à égalité : le plus récent d'abord
-        orders.sort(key=self._sort_key, reverse=self._sort_reverse)
-        self._orders = orders
+        rows.sort(key=lambda wo: wo.date, reverse=True)  # à égalité : le plus récent d'abord
+        rows.sort(key=self._sort_key, reverse=self._sort_reverse)
+        orders = [wo for wo in rows if wo.id is not None]
+        self._orders = orders  # les OT seuls : export et détail
 
         # La colonne Conducteur n'a d'intérêt que s'il y a plusieurs conducteurs dans la liste.
         several_drivers = len({wo.driver_name.strip().lower() for wo in orders if wo.driver_name.strip()}) > 1
@@ -312,9 +327,14 @@ class HistoryTab(ttk.Frame):
             self.tree.heading(col, text=self._headings[col] + arrow)
 
         total_tte = 0.0
-        for index, wo in enumerate(orders):
+        for index, wo in enumerate(rows):
             d = _parse(wo.date)
             display_date = f"{SHORT_WEEKDAYS[d.weekday()]} {d:%d/%m/%Y}" if d else wo.date
+            if wo.id is None:
+                self.tree.insert("", "end", iid=REST_PREFIX + wo.date, values=(
+                    display_date, "", "Repos", "", "", "", "", "", "",
+                ), tags=("rest",))
+                continue
             if wo.last_minute_change:
                 tags = ("last_minute",)
             else:
@@ -331,9 +351,9 @@ class HistoryTab(ttk.Frame):
             total_tte += wo.tte
 
         # On garde le jour sélectionné s'il est toujours là, sinon le premier de la liste.
-        ids = [str(wo.id) for wo in orders]
+        ids = list(self.tree.get_children())
         if ids:
-            keep = str(previous_selection) if str(previous_selection) in ids else ids[0]
+            keep = previous_selection if previous_selection in ids else ids[0]
             self.tree.selection_set(keep)
             self.tree.see(keep)
         self._show_detail()
@@ -345,6 +365,9 @@ class HistoryTab(ttk.Frame):
         meal_count = sum(int(wo.repas_midi) + int(wo.repas_soir) for wo in orders)
         if meal_count:
             summary_text += f" · {meal_count} repas"
+        rest_count = len(rows) - len(orders)
+        if rest_count:
+            summary_text += f" · {rest_count} repos"
         self.summary_label.config(text=summary_text)
 
     def export_csv(self):
@@ -383,12 +406,23 @@ class HistoryTab(ttk.Frame):
 
     def _selected_id(self) -> int | None:
         sel = self.tree.selection()
-        if not sel:
+        if not sel or sel[0].startswith(REST_PREFIX):
             return None
         return int(sel[0])
 
+    def _selected_rest_day(self) -> str:
+        sel = self.tree.selection()
+        if sel and sel[0].startswith(REST_PREFIX):
+            return sel[0][len(REST_PREFIX):]
+        return ""
+
     def edit_selected(self):
         work_order_id = self._selected_id()
+        if self._selected_rest_day():
+            messagebox.showinfo(
+                "Jour de repos", "C'est un jour de repos : il n'y a rien à modifier. "
+                "« Supprimer » le retire s'il a été noté par erreur.")
+            return
         if work_order_id is None:
             messagebox.showinfo("Sélection", "Sélectionne d'abord un ordre de travail dans la liste.")
             return
@@ -410,6 +444,13 @@ class HistoryTab(ttk.Frame):
         ImportTab._open_with_default_app(storage.resolve_source_path(wo.source_filename))
 
     def delete_selected(self):
+        rest_day = self._selected_rest_day()
+        if rest_day:
+            if messagebox.askyesno("Confirmer", f"Retirer le jour de repos du {_display_date(rest_day)} ?"):
+                db.delete_rest_day(rest_day)
+                self.refresh()
+                self.app.refresh_other_tabs("history")
+            return
         work_order_id = self._selected_id()
         if work_order_id is None:
             return

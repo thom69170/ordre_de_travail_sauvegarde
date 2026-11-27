@@ -7,6 +7,10 @@ from PIL import Image
 from app import config, parser
 from app.models import ExtractionResult
 
+# Début de l'avertissement ajouté quand Gemini n'a pas pu lire (panne, quota, connexion) : la
+# réception par e-mail s'en sert pour réessayer plus tard plutôt que de demander une relecture.
+GEMINI_FAILED_PREFIX = "Échec de la lecture via Gemini"
+
 
 def extract_from_pages(pages: list[Image.Image]) -> ExtractionResult:
     api_key = config.get_gemini_api_key()
@@ -18,7 +22,7 @@ def extract_from_pages(pages: list[Image.Image]) -> ExtractionResult:
         except gemini_engine.GeminiError as exc:
             result = parser.extract_from_pages(pages)
             result.warnings.insert(
-                0, f"Échec de la lecture via Gemini ({exc}) : bascule sur l'OCR local."
+                0, f"{GEMINI_FAILED_PREFIX} ({exc}) : bascule sur l'OCR local."
             )
             return result
     return parser.extract_from_pages(pages)

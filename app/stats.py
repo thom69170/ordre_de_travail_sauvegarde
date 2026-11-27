@@ -101,6 +101,14 @@ def in_period(orders: list[WorkOrder], kind: str, anchor: date) -> list[WorkOrde
     return [wo for wo in orders if (d := _order_date(wo)) is not None and start <= d <= end]
 
 
+def count_in_period(days: list[str], kind: str, anchor: date) -> int:
+    """Nombre de dates ISO (jours de repos) comprises dans la période."""
+    start, end = period_bounds(kind, anchor)
+    if start is None:
+        return len(days)
+    return sum(1 for day in days if start.isoformat() <= day <= end.isoformat())
+
+
 # ----------------------------------------------------------------------------- résumé
 
 @dataclass
@@ -193,11 +201,11 @@ class ChartPoint:
     muted: bool = False        # libellé atténué (samedi / dimanche)
 
 
-def _day_point(d: date, wo: WorkOrder | None, label: str) -> ChartPoint:
+def _day_point(d: date, wo: WorkOrder | None, label: str, rest: bool = False) -> ChartPoint:
     point = ChartPoint(label=label, value=wo.tte if wo else 0.0, title=long_date(d).capitalize(),
                        muted=d.weekday() >= 5)
     if wo is None:
-        point.lines = ["Pas d'ordre de travail"]
+        point.lines = ["Repos" if rest else "Pas d'ordre de travail"]
         return point
     point.lines = [f"Temps de travail : {hours_to_hm(wo.tte)}", f"Amplitude : {hours_to_hm(wo.ampli)}"]
     detail = [f"{len(wo.trajets)} trajet{'s' if len(wo.trajets) != 1 else ''}"]
@@ -226,7 +234,8 @@ def _month_point(start: date, items: list[WorkOrder], label: str) -> ChartPoint:
                       lines=lines, target=("month", start))
 
 
-def chart_series(orders: list[WorkOrder], kind: str, anchor: date) -> list[ChartPoint]:
+def chart_series(orders: list[WorkOrder], kind: str, anchor: date,
+                 rest_days: list[str] | None = None) -> list[ChartPoint]:
     """Semaine et mois : une barre par jour. Année et "Tout" : une barre par mois."""
     by_day: dict[date, WorkOrder] = {}
     by_month: dict[date, list[WorkOrder]] = {}
@@ -243,7 +252,7 @@ def chart_series(orders: list[WorkOrder], kind: str, anchor: date) -> list[Chart
         d = start
         while d <= end:
             label = f"{SHORT_WEEKDAYS[d.weekday()]}\n{d.day:02d}" if kind == "week" else str(d.day)
-            points.append(_day_point(d, by_day.get(d), label))
+            points.append(_day_point(d, by_day.get(d), label, d.isoformat() in (rest_days or ())))
             d += timedelta(days=1)
         return points
 

@@ -335,6 +335,7 @@ class StatsTab(ttk.Frame):
             except ValueError:
                 pass
         self._orders = orders
+        self._rest_days = db.list_rest_days()
         self._current = stats.in_period(orders, self.kind, self.anchor)
 
         navigable = self.kind != "all"
@@ -357,8 +358,11 @@ class StatsTab(ttk.Frame):
             prev = stats.summarize(stats.in_period(self._orders, self.kind, prev_anchor))
             if prev.days:
                 previous_text = f"Période précédente : {hours_to_hm(prev.tte)} ({prev.days} j)"
-        self.card_tte.set(hours_to_hm(s.tte) if s.days else "—", days if s.days else "Aucun ordre de travail",
-                          previous_text)
+        rest = stats.count_in_period(self._rest_days, self.kind, self.anchor)
+        days_text = days if s.days else "Aucun ordre de travail"
+        if rest:
+            days_text += f" · {rest} repos"
+        self.card_tte.set(hours_to_hm(s.tte) if s.days else "—", days_text, previous_text)
 
         if s.days:
             self.card_avg.set(
@@ -392,7 +396,7 @@ class StatsTab(ttk.Frame):
 
     def _fill_chart(self):
         points = stats.chart_series(self._orders if self.kind in ("year", "all") else self._current,
-                                    self.kind, self.anchor)
+                                    self.kind, self.anchor, self._rest_days)
         worked = [p.value for p in points if p.value > 0]
         per = "par jour" if self.kind in ("week", "month") else "par mois"
         self.chart_frame.config(text=f"Temps de travail {per} — {stats.period_label(self.kind, self.anchor)}")

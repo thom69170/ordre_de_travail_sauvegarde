@@ -24,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +40,7 @@ import fr.notivo.otenvoi.mail.DayStatus
 import fr.notivo.otenvoi.mail.MailAccount
 import fr.notivo.otenvoi.mail.MailClient
 import fr.notivo.otenvoi.mail.MailState
+import fr.notivo.otenvoi.mail.RestMark
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,7 +64,7 @@ fun relativeTag(day: LocalDate, today: LocalDate): String? = when (day.toEpochDa
     else -> null
 }
 
-/** Liste des derniers jours avec l'état de chaque ordre de travail, et le bouton pour le photographier. */
+/** Liste des jours avec l'état de chaque ordre de travail ; on y photographie un OT ou on note un repos. */
 @Composable
 fun HomeScreen(
     account: MailAccount,
@@ -80,6 +82,10 @@ fun HomeScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmResend by remember { mutableStateOf<LocalDate?>(null) }
+    // Repos envoyés depuis cet écran : affichés tout de suite, sans attendre que la boîte les montre.
+    val localMarks = remember { mutableStateMapOf<LocalDate, RestMark>() }
+    var restBusy by remember { mutableStateOf<LocalDate?>(null) }
+    var restError by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
         loading = true; error = null
@@ -93,7 +99,21 @@ fun HomeScreen(
     }
     LaunchedEffect(refreshKey, account) { refresh() }
 
-    val statuses = DayStatus.merge(days, state)
+    fun setRest(day: LocalDate, rest: Boolean) {
+        restBusy = day; restError = null
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { MailClient(account).sendRest(day, rest) } }
+            restBusy = null
+            result.onSuccess {
+                localMarks[day] = RestMark(rest, System.currentTimeMillis())
+                refresh()
+            }.onFailure { restError = "Repos non envoyé : " + (it.message ?: "erreur inconnue") }
+        }
+    }
+
+    val fetched = state ?: MailState(emptyMap(), null)
+    val newer = localMarks.filter { (day, mark) -> mark.at > (fetched.restMarks[day]?.at ?: 0L) }
+    val statuses = DayStatus.merge(days, fetched.copy(restMarks = fetched.restMarks + newer))
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(8.dp))
@@ -126,13 +146,18 @@ fun HomeScreen(
                 color = Color.Gray, fontSize = 13.sp,
             )
         }
+        restError?.let { Text(it, color = Color(0xFFC42B1C), fontSize = 13.sp) }
         Spacer(Modifier.height(6.dp))
         LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
             items(days) { day ->
                 val dayState = statuses[day] ?: DayState.NONE
-                DayRow(day, relativeTag(day, today), dayState, onClick = {
-                    if (dayState == DayState.SAVED) confirmResend = day else onCapture(day)
-                })
+                DayRow(
+                    day, relativeTag(day, today), dayState,
+                    sendingRest = restBusy == day,
+                    restEnabled = restBusy == null,
+                    onPhoto = { if (dayState == DayState.SAVED) confirmResend = day else onCapture(day) },
+                    onRest = { rest -> setRest(day, rest) },
+                )
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -150,25 +175,46 @@ fun HomeScreen(
 }
 
 @Composable
-private fun DayRow(day: LocalDate, tag: String?, state: DayState, onClick: () -> Unit) {
+private fun DayRow(
+    day: LocalDate,
+    tag: String?,
+    state: DayState,
+    sendingRest: Boolean,
+    restEnabled: Boolean,
+    onPhoto: () -> Unit,
+    onRest: (Boolean) -> Unit,
+) {
     val (text, color) = when (state) {
         DayState.SAVED -> "✓ Enregistré sur le PC" to Color(0xFF0F7B0F)
         DayState.REVIEW -> "⚠ À relire sur le PC" to Color(0xFF8A5300)
         DayState.PENDING -> "⏳ Envoyé, en attente du PC" to Color(0xFF005FB8)
         DayState.MISSING -> "⚠ Envoyé, mais pas trouvé sur le PC (date différente de celle de l'OT ?)" to Color(0xFFC42B1C)
+        DayState.REST -> "🛌 Repos" to Color(0xFF00695C)
+        DayState.REST_PENDING -> "🛌 Repos (en attente du PC)" to Color(0xFF00695C)
         DayState.NONE -> "Rien d'envoyé" to Color.Gray
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val resting = state == DayState.REST || state == DayState.REST_PENDING
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (resting) CardDefaults.cardColors(containerColor = Color(0xFFE3F1EC)) else CardDefaults.cardColors(),
+    ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(dayLabel(day), fontWeight = FontWeight.SemiBold)
                 Text(text, color = color, fontSize = 13.sp)
                 if (tag != null) Text(tag.replaceFirstChar { it.uppercase() }, color = Color.Gray, fontSize = 12.sp)
             }
-            if (state == DayState.NONE) {
-                Button(onClick = onClick) { Text("Photographier") }
-            } else {
-                OutlinedButton(onClick = onClick) { Text("Renvoyer") }
+            when {
+                resting -> OutlinedButton(onClick = { onRest(false) }, enabled = restEnabled) {
+                    Text(if (sendingRest) "Envoi…" else "Annuler")
+                }
+                state == DayState.NONE -> Column(horizontalAlignment = Alignment.End) {
+                    Button(onClick = onPhoto) { Text("Photographier") }
+                    TextButton(onClick = { onRest(true) }, enabled = restEnabled) {
+                        Text(if (sendingRest) "Envoi…" else "🛌 En repos")
+                    }
+                }
+                else -> OutlinedButton(onClick = onPhoto) { Text("Renvoyer") }
             }
         }
     }

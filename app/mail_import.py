@@ -8,7 +8,8 @@ import normal (voir app/ui/mail_watcher.py). Ce module ne contient aucune interf
   - consultation de la boîte (fetch_new_mails) : filtre sur l'expéditeur, téléchargement des pièces
     jointes dans un dossier à part, message marqué lu seulement une fois les fichiers sur le disque ;
   - traitement d'un message (process_mail) : lecture par l'IA, enregistrement automatique si tout
-    est net, sinon l'OT part en relecture dans l'onglet Importer.
+    est net ; sinon jusqu'à trois lectures avant de demander une relecture dans l'onglet Importer ;
+  - jours de repos annoncés par le téléphone (objets « REPOS AAAA-MM-JJ » et « REPOS-ANNULE … »).
 
 Les messages ne sont jamais supprimés ni déplacés de la boîte.
 """
@@ -24,6 +25,7 @@ import mimetypes
 import re
 import shutil
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +42,10 @@ MIN_IMAGE_BYTES = 20 * 1024
 ATTACHMENT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".pdf"}
 UNSUPPORTED_NOTE_EXTENSIONS = {".heic", ".heif"}
 MAX_PROCESS_ATTEMPTS = 3
+# Lectures successives d'un même OT avant de demander une relecture à l'utilisateur.
+READ_ATTEMPTS = 3
+REST_SUBJECT = re.compile(r"^REPOS(-ANNULE)? (\d{4}-\d{2}-\d{2})\b")
+OT_SUBJECT = re.compile(r"^OT (\d{4}-\d{2}-\d{2})\b")
 KEEP_DAYS = 30
 STATE_IDS_LIMIT = 1000
 LOG_LIMIT = 60
@@ -197,6 +203,7 @@ class ReceivedMail:
 class FetchReport:
     mails: list[ReceivedMail] = field(default_factory=list)
     ignored: int = 0  # messages lus mais écartés (expéditeur non autorisé, déjà reçu, sans photo...)
+    rest_changes: list[tuple[str, bool]] = field(default_factory=list)  # (jour, repos ou annulé)
 
 
 def pending_mails() -> list[ReceivedMail]:
@@ -415,6 +422,14 @@ def _handle_message(conn, uid: bytes, allowed: set, known: set, report: FetchRep
         report.ignored += 1
         return
 
+    rest = parse_rest_subject(subject)
+    if rest:
+        _apply_rest(*rest, report)
+        _remember_id(message_id)
+        known.add(message_id)
+        _mark_seen(conn, uid)
+        return
+
     folder = inbox_dir() / f"{datetime.now():%Y%m%d-%H%M%S}-{hashlib.sha1(message_id.encode()).hexdigest()[:6]}"
     folder.mkdir(parents=True, exist_ok=True)
     files, notes = _extract_attachments(msg, folder)
@@ -435,6 +450,42 @@ def _handle_message(conn, uid: bytes, allowed: set, known: set, report: FetchRep
     known.add(message_id)
     _mark_seen(conn, uid)
     report.mails.append(mail)
+
+
+def _valid_date(iso: str) -> str:
+    try:
+        return datetime.strptime(iso, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return ""
+
+
+def parse_rest_subject(subject: str) -> tuple[str, bool] | None:
+    """(jour, True si repos / False si annulation) pour un objet envoyé par le téléphone, sinon None."""
+    match = REST_SUBJECT.match((subject or "").strip())
+    if not match or not _valid_date(match.group(2)):
+        return None
+    return match.group(2), match.group(1) is None
+
+
+def subject_date(subject: str) -> str:
+    """Jour annoncé par l'objet d'un envoi du téléphone (« OT AAAA-MM-JJ »), "" sinon."""
+    match = OT_SUBJECT.match((subject or "").strip())
+    return _valid_date(match.group(1)) if match else ""
+
+
+def _apply_rest(day: str, rest: bool, report: FetchReport) -> None:
+    from app import db
+
+    shown = datetime.fromisoformat(day).strftime("%d/%m")
+    if not rest:
+        db.delete_rest_day(day)
+        log_event(f"Repos du {shown} annulé depuis le téléphone.")
+    elif db.set_rest_day(day):
+        log_event(f"✓ Repos noté le {shown}.")
+    else:
+        log_event(f"Repos du {shown} non noté : un OT est enregistré ce jour-là.", "warn")
+        return
+    report.rest_changes.append((day, rest))
 
 
 def _mark_seen(conn, uid: bytes) -> None:
@@ -462,8 +513,9 @@ def review_dates() -> list[str]:
     return sorted(found)
 
 
-def collect_state() -> tuple[list[str], list[str]]:
-    """(jours dont l'OT est enregistré, jours à relire) - les seules choses que le téléphone apprend."""
+def collect_state() -> tuple[list[str], list[str], list[str]]:
+    """(jours dont l'OT est enregistré, jours à relire, jours de repos) - les seules choses que le
+    téléphone apprend."""
     from datetime import timedelta
 
     from app import db
@@ -471,10 +523,11 @@ def collect_state() -> tuple[list[str], list[str]]:
     limit = (datetime.now() - timedelta(days=STATE_DAYS)).date().isoformat()
     saved = sorted({wo.date for wo in db.list_work_orders() if wo.date and wo.date >= limit})
     review = [d for d in review_dates() if d not in saved]
-    return saved, review
+    rest = sorted(d for d in db.list_rest_days() if d >= limit)
+    return saved, review, rest
 
 
-def build_state_message(settings: dict, saved: list[str], review: list[str]) -> bytes:
+def build_state_message(settings: dict, saved: list[str], review: list[str], rest: list[str]) -> bytes:
     from email.message import EmailMessage
 
     msg = EmailMessage()
@@ -487,7 +540,7 @@ def build_state_message(settings: dict, saved: list[str], review: list[str]) -> 
     msg["X-OT-Source"] = "pc"
     msg.set_content(json.dumps({
         "v": 1, "generated": datetime.now().isoformat(timespec="seconds"),
-        "dates": saved, "review": review,
+        "dates": saved, "review": review, "rest": rest,
     }, ensure_ascii=False), charset="utf-8")
     return msg.as_bytes()
 
@@ -497,8 +550,8 @@ def publish_state(settings: dict, force: bool = False) -> bool:
     téléphone. Rien n'est publié si rien n'a changé depuis la dernière fois (sauf toutes les 12 h).
     Retourne True si un état a été publié. Ne lève jamais : c'est un confort, pas une obligation."""
     try:
-        saved, review = collect_state()
-        digest = hashlib.sha1(json.dumps([saved, review]).encode()).hexdigest()
+        saved, review, rest = collect_state()
+        digest = hashlib.sha1(json.dumps([saved, review, rest]).encode()).hexdigest()
         state = _read_json(_state_path(), {})
         fresh = time.time() - state.get("state_time", 0) < STATE_REFRESH_SECONDS
         if not force and state.get("state_hash") == digest and fresh:
@@ -508,7 +561,7 @@ def publish_state(settings: dict, force: bool = False) -> bool:
             conn.create(STATE_FOLDER)  # existe déjà : réponse NO, sans importance
             typ, _ = conn.append(
                 STATE_FOLDER, "(\\Seen)", imaplib.Time2Internaldate(time.time()),
-                build_state_message(settings, saved, review),
+                build_state_message(settings, saved, review, rest),
             )
             if typ != "OK":
                 return False
@@ -546,6 +599,7 @@ class MailOutcome:
     date: str = ""
     extraction: object | None = None
     reasons: list[str] = field(default_factory=list)
+    reads: int = 1  # nombre de lectures faites
 
 
 def work_order_from_extraction(extraction):
@@ -612,9 +666,83 @@ def review_reasons(extraction) -> list[str]:
     return reasons
 
 
+def _signature(extraction) -> tuple:
+    """Tout ce qui doit coïncider entre deux lectures pour se fier à l'une d'elles."""
+    values = tuple(
+        (name, round(float(value or 0.0), 2))
+        for name, value in sorted({**extraction.summary, **extraction.extras}.items())
+        if value
+    )
+    return (extraction.date, values, len(extraction.trajets), bool(extraction.repas_midi),
+            bool(extraction.repas_soir), bool(extraction.last_minute_change))
+
+
+def _worth_retrying(extraction, reasons: list[str]) -> bool:
+    """Relire ne sert à rien sans Gemini (l'OCR local donne toujours le même résultat), ni quand le
+    seul problème est que ce même OT (mêmes heures, mêmes km) est déjà enregistré."""
+    from app import db
+
+    if not config.get_gemini_api_key():
+        return False
+    if len(reasons) == 1 and extraction.date:
+        existing = db.get_work_order_by_date(extraction.date)
+        if existing is not None:
+            new = work_order_from_extraction(extraction)
+            if all(abs(getattr(existing, f) - getattr(new, f)) < 0.005
+                   for f in ("tte", "ampli", "km_totaux")):
+                return False
+    return True
+
+
+@dataclass
+class _ReadResult:
+    extraction: object
+    reasons: list[str]
+    reads: int
+    unavailable: str = ""  # Gemini injoignable : message d'erreur (on réessaiera plus tard)
+
+
+def _read_with_retries(pages, extract) -> _ReadResult:
+    """Lit l'OT jusqu'à READ_ATTEMPTS fois tant que la lecture laisse un doute. Une lecture nette
+    obtenue du premier coup est acceptée. Après une première lecture douteuse, une lecture nette
+    n'est acceptée que si ses valeurs confirment celles d'une autre lecture : relire jusqu'à tomber
+    sur une lecture « qui passe » ne doit pas faire enregistrer un chiffre faux en silence."""
+    from app.extraction import GEMINI_FAILED_PREFIX
+
+    done: list[tuple[object, list[str]]] = []
+    for attempt in range(1, READ_ATTEMPTS + 1):
+        extraction = extract(pages)
+        failure = next((w for w in extraction.warnings if w.startswith(GEMINI_FAILED_PREFIX)), "")
+        if failure:
+            best = _best_read(done)[0] if done else extraction
+            return _ReadResult(best, [], attempt, unavailable=failure)
+        reasons = review_reasons(extraction)
+        signature = _signature(extraction)
+        if not reasons and (not done or any(_signature(e) == signature for e, _r in done)):
+            return _ReadResult(extraction, [], attempt)
+        done.append((extraction, reasons))
+        if not _worth_retrying(extraction, reasons):
+            break
+
+    extraction, reasons = _best_read(done)
+    if not reasons:
+        reasons = ["les lectures successives ne donnent pas les mêmes valeurs"]
+        extraction.warnings.insert(
+            0, "Les lectures successives de cet OT ne donnaient pas les mêmes valeurs : vérifie bien "
+               "tous les champs.")
+    return _ReadResult(extraction, reasons, len(done))
+
+
+def _best_read(done: list) -> tuple:
+    """La lecture à proposer en relecture : le moins de doutes, puis les valeurs lues le plus souvent."""
+    counts = Counter(_signature(e) for e, _r in done)
+    return min(done, key=lambda item: (len(item[1]), -counts[_signature(item[0])]))
+
+
 def process_mail(mail: ReceivedMail, extract=None) -> MailOutcome:
-    """Lit les pages du message. Enregistre l'OT tout seul quand la lecture est nette ; sinon
-    renvoie "review" (à relire dans l'onglet Importer). Exécuté hors du fil d'affichage."""
+    """Lit les pages du message. Enregistre l'OT tout seul quand la lecture est nette (au besoin
+    après plusieurs lectures) ; sinon renvoie "review" (à relire dans l'onglet Importer), ou "error"
+    s'il faut réessayer plus tard. Exécuté hors du fil d'affichage."""
     from app import db, ocr_engine, storage
 
     if extract is None:
@@ -626,17 +754,21 @@ def process_mail(mail: ReceivedMail, extract=None) -> MailOutcome:
             pages.extend(ocr_engine.load_pages(path))
         if not pages:
             raise ValueError("aucune page lisible")
-        extraction = extract(pages)
+        result = _read_with_retries(pages, extract)
     except Exception as exc:  # noqa: BLE001
         return MailOutcome("error", mail, reasons=[str(exc)])
     finally:
         pages = None  # libère les images
 
-    reasons = review_reasons(extraction)
-    if reasons:
-        return MailOutcome("review", mail, date=extraction.date, extraction=extraction, reasons=reasons)
+    extraction = result.extraction
+    if result.unavailable:
+        return MailOutcome("error", mail, date=extraction.date, extraction=extraction,
+                           reasons=[result.unavailable], reads=result.reads)
+    if result.reasons:
+        return MailOutcome("review", mail, date=extraction.date, extraction=extraction,
+                           reasons=result.reasons, reads=result.reads)
 
     wo = work_order_from_extraction(extraction)
     wo.source_filename, wo.source_type = storage.store_source_files(mail.files, wo.date)
     db.insert_work_order(wo)
-    return MailOutcome("saved", mail, date=wo.date, extraction=extraction)
+    return MailOutcome("saved", mail, date=wo.date, extraction=extraction, reads=result.reads)

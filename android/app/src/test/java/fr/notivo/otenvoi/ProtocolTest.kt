@@ -5,6 +5,7 @@ import fr.notivo.otenvoi.mail.DayStatus
 import fr.notivo.otenvoi.mail.MailClient
 import fr.notivo.otenvoi.mail.MailState
 import fr.notivo.otenvoi.mail.PcState
+import fr.notivo.otenvoi.mail.RestMark
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -75,6 +76,76 @@ class ProtocolTest {
         // envoyé APRÈS la publication : le PC n'a forcément pas pu le voir
         val after = MailState(sentAt = mapOf(d1 to millis("2026-11-24T09:00:00")), pc = pc)
         assertEquals(DayState.PENDING, DayStatus.merge(listOf(d1), after)[d1])
+    }
+
+    @Test
+    fun restSubjectRoundTrip() {
+        assertEquals("REPOS 2026-11-24", Protocol.restSubjectFor(d1, true))
+        assertEquals("REPOS-ANNULE 2026-11-24", Protocol.restSubjectFor(d1, false))
+        assertEquals(d1 to true, Protocol.restFromSubject("REPOS 2026-11-24"))
+        assertEquals(d1 to false, Protocol.restFromSubject(" REPOS-ANNULE 2026-11-24 "))
+        assertNull(Protocol.restFromSubject("OT 2026-11-24"))
+        assertNull(Protocol.restFromSubject("REPOS 2026-13-45"))
+        assertNull(Protocol.dateFromSubject("REPOS 2026-11-24")) // un repos n'est pas un envoi d'OT
+    }
+
+    private fun rest(
+        sent: String? = null,
+        mark: Pair<Boolean, String>? = null,
+        pcRest: Boolean? = false, // null : PC trop ancien ; ou pas d'état du tout si generated == null
+        generated: String? = "2026-11-24T08:00:00",
+        saved: Boolean = false,
+        review: Boolean = false,
+    ): DayState {
+        val pc = generated?.let {
+            PcState(
+                if (saved) setOf(d1) else emptySet(), if (review) setOf(d1) else emptySet(), it,
+                pcRest?.let { has -> if (has) setOf(d1) else emptySet() },
+            )
+        }
+        val state = MailState(
+            sentAt = sent?.let { mapOf(d1 to millis(it)) } ?: emptyMap(),
+            pc = pc,
+            restMarks = mark?.let { mapOf(d1 to RestMark(it.first, millis(it.second))) } ?: emptyMap(),
+        )
+        return DayStatus.merge(listOf(d1), state).getValue(d1)
+    }
+
+    @Test
+    fun restIsPendingUntilThePcConfirms() {
+        assertEquals(DayState.REST_PENDING, rest(mark = true to "2026-11-24T09:00:00"))
+        assertEquals(DayState.REST_PENDING, rest(mark = true to "2026-11-24T09:00:00", generated = null))
+        assertEquals(DayState.REST, rest(mark = true to "2026-11-24T07:59:00", pcRest = true))
+        assertEquals(DayState.REST, rest(pcRest = true)) // noté il y a longtemps : seul le PC le sait
+        // PC pas encore mis à jour (il ne publie pas les repos) : on reste en attente
+        assertEquals(DayState.REST_PENDING, rest(mark = true to "2026-11-24T06:00:00", pcRest = null))
+        // retiré sur le PC bien après l'annonce : le PC fait foi
+        assertEquals(DayState.NONE, rest(mark = true to "2026-11-24T06:00:00", pcRest = false))
+    }
+
+    @Test
+    fun cancelledRestDisappearsAtOnce() {
+        assertEquals(DayState.NONE, rest(mark = false to "2026-11-24T09:00:00", pcRest = true))
+        assertEquals(DayState.NONE, rest(mark = false to "2026-11-24T07:59:00", pcRest = false))
+        // le PC a répondu longtemps après et signale encore le repos (renoté depuis) : il fait foi
+        assertEquals(DayState.REST, rest(mark = false to "2026-11-24T06:00:00", pcRest = true))
+    }
+
+    @Test
+    fun anOtWinsOverRest() {
+        assertEquals(DayState.SAVED, rest(mark = true to "2026-11-24T09:00:00", saved = true))
+        // OT envoyé après le repos : jour travaillé finalement
+        assertEquals(DayState.PENDING, rest(sent = "2026-11-24T09:30:00", mark = true to "2026-11-24T09:00:00", pcRest = true))
+        assertEquals(DayState.REVIEW, rest(sent = "2026-11-24T07:00:00", mark = true to "2026-11-24T06:00:00", pcRest = true, review = true))
+        // repos annoncé après un envoi resté sans suite
+        assertEquals(DayState.REST_PENDING, rest(sent = "2026-11-24T08:30:00", mark = true to "2026-11-24T09:00:00"))
+    }
+
+    @Test
+    fun parseStateReadsRestDays() {
+        assertEquals(setOf(d1), MailClient.parseState("""{"dates":[],"rest":["2026-11-24"]}""")!!.restDates)
+        assertEquals(emptySet<LocalDate>(), MailClient.parseState("""{"rest":[]}""")!!.restDates)
+        assertNull(MailClient.parseState("""{"dates":[]}""")!!.restDates) // ancien PC
     }
 
     @Test

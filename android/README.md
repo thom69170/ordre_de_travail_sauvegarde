@@ -1,7 +1,8 @@
 # OT Envoi — application Android
 
 Envoie tes ordres de travail **en photo, directement dans la boîte mail dédiée**, et indique pour chaque
-jour si l'OT est déjà enregistré sur le PC. **Aucune photo n'est enregistrée sur le téléphone.**
+jour si l'OT est déjà enregistré sur le PC. On peut aussi y noter ses **jours de repos**.
+**Aucune photo n'est enregistrée sur le téléphone.**
 
 ## Utilisation
 
@@ -13,9 +14,13 @@ jour si l'OT est déjà enregistré sur le PC. **Aucune photo n'est enregistrée
    sur **Photographier** pour un jour : l'appareil photo s'ouvre, prends chaque page (une ou deux), vérifie les
    miniatures (✕ pour en retirer), puis **Envoyer**. **Choisir dans la galerie** ajoute des photos déjà prises
    (jusqu'à 6 pages au total) : elles sont lues en mémoire, sans être copiées.
-4. L'état de chaque jour :
+4. **Jour de repos** : sur un jour sans envoi, appuie sur **🛌 En repos**. Le jour passe en « Repos (en attente
+   du PC) », puis « Repos » quand le PC l'a noté. **Annuler** revient en arrière (pour photographier un OT sur ce
+   jour : annule d'abord le repos). Il faut l'application du PC en version ≥ 2.11.0.
+5. L'état de chaque jour :
    - **✓ Enregistré sur le PC** — l'OT est dans l'application du PC ;
-   - **⚠ À relire sur le PC** — le PC a lu l'OT mais attend ta relecture (onglet Importer) ;
+   - **⚠ À relire sur le PC** — après trois lectures, le PC a encore un doute et attend ta relecture (onglet
+     Importer) ;
    - **⏳ Envoyé, en attente du PC** — le PC n'a pas encore traité l'envoi (PC éteint ou application fermée) ;
    - **⚠ Envoyé, mais pas trouvé sur le PC** — le PC a répondu depuis, sans cet OT à cette date : le jour
      choisi n'est sans doute pas celui de l'OT ;
@@ -28,7 +33,8 @@ Tout passe par la boîte mail ; le PC et le téléphone ne se parlent jamais dir
 | Sens | Quoi |
 |---|---|
 | téléphone → boîte | un e-mail de la boîte à elle-même, objet `OT AAAA-MM-JJ`, une pièce jointe JPEG par page, en-tête `X-OT-Source: android` |
-| PC → téléphone | dans le dossier (libellé) `OT-etat` de la boîte, un message texte contenant `{"v":1,"generated":"…","dates":[…],"review":[…]}` : les jours enregistrés et ceux à relire |
+| téléphone → boîte | repos : un e-mail sans pièce jointe, objet `REPOS AAAA-MM-JJ` (annulation : `REPOS-ANNULE AAAA-MM-JJ`) |
+| PC → téléphone | dans le dossier (libellé) `OT-etat` de la boîte, un message texte contenant `{"v":1,"generated":"…","dates":[…],"review":[…],"rest":[…]}` : les jours enregistrés, ceux à relire et les repos |
 
 Côté PC (application « Ordres de travail », version ≥ 2.10.0) : la boîte est toujours un expéditeur autorisé
 (`app/mail_import.py`) et l'état est publié après chaque relève (`publish_state`), seulement s'il a changé ou
