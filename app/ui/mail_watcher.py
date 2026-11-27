@@ -9,6 +9,7 @@ from app import mail_import
 from app.mail_import import MailError
 
 STARTUP_DELAY_MS = 4000
+RESTORE_DELAY_MS = 800
 
 
 def _short_date(iso: str) -> str:
@@ -30,6 +31,9 @@ class MailWatcher:
 
     def start(self) -> None:
         self.reconfigure(STARTUP_DELAY_MS)
+        # Après l'ouverture de la fenêtre : la lecture d'un OT se fait en arrière-plan, qui a besoin
+        # de la boucle d'affichage. Fait même si la réception par e-mail a été désactivée depuis.
+        self.root.after(RESTORE_DELAY_MS, self.restore_reviews)
 
     def reconfigure(self, first_delay_ms: int | None = None) -> None:
         """À appeler au démarrage et chaque fois que les réglages changent."""
@@ -114,11 +118,28 @@ class MailWatcher:
             mail_import.log_event(f"✓ OT du {_short_date(outcome.date)} enregistré automatiquement{at} ({who}).")
         else:
             # Date illisible : celle choisie sur le téléphone permet au moins d'y afficher « à relire ».
-            mail.save_manifest("queued", date=outcome.date or mail_import.subject_date(mail.subject))
+            mail.save_manifest("queued", date=outcome.date or mail_import.subject_date(mail.subject),
+                               extraction=outcome.extraction)
             after = f" après {outcome.reads} lectures" if outcome.reads > 1 else ""
             mail_import.log_event(
                 f"À relire{after} : OT reçu de {who} ({'; '.join(outcome.reasons)}).", "warn")
         return outcome
+
+    # ------------------------------------------------------------------ reprise au démarrage
+
+    def restore_reviews(self) -> None:
+        """Remet dans l'onglet Importer les OT qui attendaient une relecture à la fermeture."""
+        try:
+            waiting = mail_import.queued_reviews()
+            for files, extraction in waiting:
+                self.app.import_tab.receive_from_mail(files, extraction)
+        except Exception as exc:  # noqa: BLE001
+            mail_import.log_event(f"Reprise des relectures impossible : {exc}", "error")
+            return
+        if waiting:
+            self.app.set_mail_status(
+                f"✉ {len(waiting)} OT reçu{'s' if len(waiting) > 1 else ''} par e-mail à relire "
+                "dans l'onglet Importer", alert=True)
 
     # ------------------------------------------------------------------ résultat (fil d'affichage)
 

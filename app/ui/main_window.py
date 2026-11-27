@@ -221,6 +221,7 @@ class MainWindow(ttk.Frame):
     def reload_all_data(self) -> None:
         """Après une restauration de sauvegarde : tout ce qui est affiché vient de l'ancienne
         base et doit être relu."""
+        self.import_tab._set_aside_mail_document()
         self.import_tab.reset_form()
         self.history_tab.refresh()
         self.stats_tab.refresh()

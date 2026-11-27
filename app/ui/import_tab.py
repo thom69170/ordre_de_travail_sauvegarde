@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from app import config, db, ocr_engine, storage
+from app import config, db, mail_import, ocr_engine, storage
 from app.extraction import extract_from_pages as run_extraction
 from app.models import EXTRA_FIELDS, SUMMARY_FIELDS, WorkOrder, format_trajet, split_trajet
 from app.ui.common import (
@@ -339,6 +339,7 @@ class ImportTab(ttk.Frame):
                 self.current_source_paths.extend(paths)
                 self._load_document(self.current_source_paths, is_append=True)
                 return
+            self._set_aside_mail_document()
         self._load_document(paths)
 
     def _open_phone_upload_dialog(self):
@@ -403,13 +404,28 @@ class ImportTab(ttk.Frame):
     def receive_from_mail(self, paths: list[Path], extraction=None):
         """Un OT reçu par e-mail que l'enregistrement automatique n'a pas voulu valider seul : il
         rejoint la file de relecture, avec la lecture déjà faite (pas de seconde analyse)."""
+        wanted = list(paths)
+        if wanted == self.current_source_paths or any(wanted == group for group in self._phone_queue):
+            return  # déjà là
+        group = self._mail_group(wanted, extraction)
+        self._phone_queue.append(group)
+        self._maybe_start_next_from_queue()
+        self._start_prefetch_if_idle()
+
+    def _mail_group(self, paths: list[Path], extraction=None) -> _PhoneGroup:
         group = _PhoneGroup(paths[0], len(paths), " (reçu par e-mail)")
         group.extend(paths[1:])
         if extraction is not None:
             self._analysis_cache[tuple(group)] = extraction
-        self._phone_queue.append(group)
-        self._maybe_start_next_from_queue()
-        self._start_prefetch_if_idle()
+        return group
+
+    def _set_aside_mail_document(self) -> None:
+        """Le formulaire va servir à autre chose : un OT reçu par e-mail qui y attendait sa relecture
+        retourne en tête de file au lieu d'être perdu (il reviendra ensuite, tel qu'il avait été lu)."""
+        paths = list(self.current_source_paths)
+        if paths and mail_import.waiting_review(paths):
+            self._phone_queue.insert(0, self._mail_group(paths, mail_import.stored_extraction(paths)))
+            self._update_queue_label()
 
     def _retry_start(self):
         self._start_retry_scheduled = False
@@ -463,6 +479,16 @@ class ImportTab(ttk.Frame):
         self._start_prefetch_if_idle()
 
     def _on_reset_clicked(self):
+        paths = list(self.current_source_paths)
+        if paths and mail_import.waiting_review(paths):
+            if not messagebox.askyesno(
+                "Abandonner cet OT ?",
+                "Cet OT reçu par e-mail attend ta relecture.\n\nL'abandonner sans l'enregistrer ? "
+                "Il ne te sera plus proposé.",
+            ):
+                return
+            mail_import.close_review(paths, saved=False)
+            mail_import.log_event("Relecture abandonnée : OT non enregistré.", "warn")
         self.reset_form()
         self._maybe_start_next_from_queue()
 
@@ -540,6 +566,9 @@ class ImportTab(ttk.Frame):
             self.current_source_paths.pop()
             self._update_file_label()
             return
+        if mail_import.waiting_review(self.current_source_paths):
+            mail_import.close_review(self.current_source_paths, saved=False)
+            mail_import.log_event(f"Relecture abandonnée : fichier illisible ({exc}).", "warn")
         self.reset_form()
         self._maybe_start_next_from_queue()
 
@@ -683,6 +712,7 @@ class ImportTab(ttk.Frame):
         self.app.select_tab("history")
 
     def load_for_edit(self, work_order: WorkOrder):
+        self._set_aside_mail_document()
         self.reset_form()
         self.editing_id = work_order.id
         self.current_source_paths = []
@@ -718,6 +748,11 @@ class ImportTab(ttk.Frame):
         self.save_btn.config(text="Mettre à jour")
 
     def reset_form(self, keep_file_dialog_open: bool = False):
+        # Une analyse encore en cours concerne l'ancien contenu : son résultat ne doit plus arriver
+        # dans le formulaire (il écraserait par exemple l'OT ouvert depuis l'Historique).
+        self._extraction_token += 1
+        if self._processing:
+            self._set_processing(False)
         self.editing_id = None
         self.current_source_paths = []
         self.current_pages = None
@@ -793,6 +828,8 @@ class ImportTab(ttk.Frame):
             db.insert_work_order(wo)
         else:
             db.update_work_order(wo)
+
+        mail_import.close_review(self.current_source_paths, saved=True)
 
         messagebox.showinfo("Enregistré", f"Ordre de travail du {date_iso} enregistré.")
         self.reset_form()

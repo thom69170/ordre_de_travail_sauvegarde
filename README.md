@@ -88,7 +88,10 @@ statistiques par semaine / mois / année.
      file de l'onglet Importer **déjà lu**, pour relecture. Quand Gemini est injoignable (panne,
      quota, réseau), l'envoi est réessayé aux deux relèves suivantes avant de demander une
      relecture. Sans clé Gemini, ou pour un OT identique déjà enregistré, relire ne changerait
-     rien : relecture directe. Un bandeau en bas de la fenêtre résume ce qui vient d'arriver (clic = onglet
+     rien : relecture directe. Un OT à relire **reste en attente tant que tu ne l'as pas
+     enregistré ou abandonné** (*Réinitialiser le formulaire*, avec confirmation) : il revient
+     dans l'onglet Importer, déjà lu, après un redémarrage, et n'est pas perdu si tu ouvres entre
+     temps un autre OT. Un bandeau en bas de la fenêtre résume ce qui vient d'arriver (clic = onglet
      Importer) et les Paramètres gardent le journal des dernières activités. Les e-mails sont
      marqués lus mais **jamais supprimés ni déplacés** ; les photos HEIC (iPhone) ne sont pas
      lues. Le mot de passe est stocké en clair dans `config.json`, comme la clé Gemini, et n'est pas

@@ -9,7 +9,9 @@ import normal (voir app/ui/mail_watcher.py). Ce module ne contient aucune interf
     jointes dans un dossier à part, message marqué lu seulement une fois les fichiers sur le disque ;
   - traitement d'un message (process_mail) : lecture par l'IA, enregistrement automatique si tout
     est net ; sinon jusqu'à trois lectures avant de demander une relecture dans l'onglet Importer ;
-  - jours de repos annoncés par le téléphone (objets « REPOS AAAA-MM-JJ » et « REPOS-ANNULE … »).
+  - jours de repos annoncés par le téléphone (objets « REPOS AAAA-MM-JJ » et « REPOS-ANNULE … ») ;
+  - OT à relire gardés sur le disque avec leur lecture, jusqu'à ce qu'ils soient enregistrés ou
+    abandonnés : ils reviennent dans l'onglet Importer après un redémarrage.
 
 Les messages ne sont jamais supprimés ni déplacés de la boîte.
 """
@@ -26,7 +28,7 @@ import re
 import shutil
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 
@@ -191,12 +193,19 @@ class ReceivedMail:
     def manifest(self) -> Path:
         return self.folder / "mail.json"
 
-    def save_manifest(self, status: str, date: str = "") -> None:
-        self.manifest.write_text(json.dumps({
+    def save_manifest(self, status: str, date: str = "", extraction=None) -> None:
+        data = {
             "status": status, "message_id": self.message_id, "sender": self.sender,
             "subject": self.subject, "files": [p.name for p in self.files],
             "notes": self.notes, "attempts": self.attempts, "date": date,
-        }, ensure_ascii=False), encoding="utf-8")
+        }
+        if status == "queued":
+            # « tracked » : l'issue de la relecture (enregistrée ou abandonnée) sera notée ici. La
+            # lecture est gardée pour ne pas la refaire après un redémarrage.
+            data["tracked"] = True
+            if extraction is not None:
+                data["extraction"] = asdict(extraction)
+        self.manifest.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
 @dataclass
@@ -226,13 +235,14 @@ def pending_mails() -> list[ReceivedMail]:
 
 
 def cleanup_old_folders(now: float | None = None) -> None:
-    """Supprime les dossiers de messages déjà traités depuis plus de KEEP_DAYS jours."""
+    """Supprime les dossiers de messages déjà traités depuis plus de KEEP_DAYS jours (jamais ceux
+    qui attendent encore d'être lus ou relus)."""
     limit = (now or time.time()) - KEEP_DAYS * 86400
     for folder in inbox_dir().iterdir():
         if not folder.is_dir():
             continue
         data = _read_json(folder / "mail.json", {})
-        if data.get("status") == "pending":
+        if data.get("status") in ("pending", "queued"):
             continue
         try:
             if folder.stat().st_mtime < limit:
@@ -243,6 +253,88 @@ def cleanup_old_folders(now: float | None = None) -> None:
 
 def discard(mail: ReceivedMail) -> None:
     shutil.rmtree(mail.folder, ignore_errors=True)
+
+
+# ----------------------------------------------------------------------------- relectures en attente
+
+def _review_folders(paths) -> list[tuple[Path, dict]]:
+    """Dossiers de messages en attente de relecture auxquels appartiennent ces fichiers."""
+    root = inbox_dir().resolve()
+    found = []
+    for folder in dict.fromkeys(Path(p).parent for p in paths):
+        if folder.parent.resolve() != root:
+            continue
+        data = _read_json(folder / "mail.json", None)
+        if data and data.get("status") == "queued":
+            found.append((folder, data))
+    return found
+
+
+def _write_status(folder: Path, data: dict, status: str) -> None:
+    data = {k: v for k, v in data.items() if k != "extraction"}
+    data["status"] = status
+    try:
+        (folder / "mail.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        log_event(f"Suivi d'une relecture non enregistré : {exc}", "warn")
+
+
+def waiting_review(paths) -> bool:
+    """Ces fichiers sont-ils ceux d'un OT reçu par e-mail qui attend encore sa relecture ?"""
+    return bool(_review_folders(paths))
+
+
+def close_review(paths, saved: bool) -> None:
+    """La relecture de cet OT est terminée : enregistré (saved) ou abandonné."""
+    for folder, data in _review_folders(paths):
+        _write_status(folder, data, "done" if saved else "dismissed")
+
+
+def _extraction_from(data) -> object | None:
+    from app.models import ExtractionResult
+
+    if not isinstance(data, dict):
+        return None
+    known = {f.name for f in fields(ExtractionResult)}
+    try:
+        return ExtractionResult(**{k: v for k, v in data.items() if k in known})
+    except TypeError:
+        return None
+
+
+def stored_extraction(paths) -> object | None:
+    """La lecture gardée avec un OT à relire, None s'il n'y en a pas."""
+    for _folder, data in _review_folders(paths):
+        extraction = _extraction_from(data.get("extraction"))
+        if extraction is not None:
+            return extraction
+    return None
+
+
+def queued_reviews() -> list[tuple[list[Path], object | None]]:
+    """OT à relire laissés en attente (app fermée, PC redémarré), du plus ancien au plus récent :
+    (fichiers, lecture déjà faite ou None)."""
+    from app import db
+
+    found = []
+    for folder in sorted(inbox_dir().iterdir()):
+        data = _read_json(folder / "mail.json", None) if folder.is_dir() else None
+        if not data or data.get("status") != "queued":
+            continue
+        if not data.get("tracked"):
+            # Ancienne version : l'issue n'était pas notée. On ne reprend que ce que le téléphone
+            # affiche encore « à relire » (une date, sans OT enregistré ce jour-là) : le reste a
+            # très probablement déjà été traité et ne doit pas réapparaître.
+            day = data.get("date")
+            if not day or db.get_work_order_by_date(day) is not None:
+                _write_status(folder, data, "done")
+                continue
+        files = [folder / name for name in data.get("files", []) if (folder / name).exists()]
+        if not files:
+            _write_status(folder, data, "dismissed")
+            continue
+        found.append((files, _extraction_from(data.get("extraction"))))
+    return found
 
 
 # ----------------------------------------------------------------------------- IMAP
